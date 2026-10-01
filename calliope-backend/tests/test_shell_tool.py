@@ -403,12 +403,13 @@ def test_settings_roundtrip_for_new_keys(client, monkeypatch):
         assert r2.json()["agent_shell_enabled"] is False
 
 
-def test_settings_rejects_ephemeral_workspace():
+def test_settings_rejects_ephemeral_workspace(monkeypatch, tmp_path):
     """load/save poison-guard: a %TEMP% workspace resets to the data_dir default."""
     import tempfile
 
     import calliope.config as config_module
 
+    monkeypatch.setattr(config_module, "CONFIG_FILE", tmp_path / "calliope_config.json")
     s = config_module.settings
     with tempfile.TemporaryDirectory() as tmp:
         s.agent_workspace_dir = Path(tmp)

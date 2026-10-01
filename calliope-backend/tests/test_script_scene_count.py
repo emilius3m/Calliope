@@ -51,6 +51,12 @@ def test_script_regenerate_keeps_expanded_count(client, monkeypatch):
 
     monkeypatch.setattr("calliope.agent.script_agent.generate_structured", fake_structured)
 
+    async def fake_coverage(*args, **kwargs):
+        return {"scenes": []}
+
+    # Coverage is a separate LLM pass; this test verifies the scene board.
+    monkeypatch.setattr("calliope.agent.coverage_agent.expand_scene_coverage", fake_coverage)
+
     r = client.post("/api/projects", json={"title": "Expand", "idea": "desert", "target_duration": "30 seconds"})
     pid = r.json()["id"]
 
