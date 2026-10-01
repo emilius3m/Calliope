@@ -137,6 +137,7 @@
 				action: editing!.action,
 				dialog: editing!.dialog,
 				duration_sec: editing!.duration_sec,
+				item_ids: editing!.item_ids ?? [],
 			}),
 		onSuccess: () => {
 			editing = null;
@@ -199,6 +200,12 @@
 		if (scene.location_id == null) return null;
 		const locs = $assetsQuery.data?.locations ?? [];
 		return locs.find((l) => l.id === scene.location_id)?.name ?? null;
+	}
+
+	function toggleItem(id: number) {
+		if (!editing) return;
+		const ids = editing.item_ids ?? [];
+		editing.item_ids = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 	}
 
 	function avatarFor(char: { portrait_path: string | null; sheet_path: string | null }) {
@@ -506,6 +513,11 @@
 					{#if locName}
 						<span class="chip"><Icon name="folder" size={12} /> {locName}</span>
 					{/if}
+					{#each scene.items ?? [] as item (item.id)}
+						<span class="chip" title={t('script.itemChipTitle')}>
+							<Icon name="paperclip" size={12} /> {item.name}
+						</span>
+					{/each}
 					{#if scene.duration_sec}
 						<span class="chip"><Icon name="clock" size={12} /> {formatClock(scene.duration_sec)}</span>
 					{/if}
@@ -560,6 +572,29 @@
 			<span class="field-label">{t('script.durationField')}</span>
 			<input class="field-input" type="number" bind:value={editing.duration_sec} min="1" />
 		</label>
+		<div class="field">
+			<span class="field-label">{t('script.itemsField')}</span>
+			{#if ($assetsQuery.data?.items ?? []).length}
+				<div class="chips">
+					{#each $assetsQuery.data?.items ?? [] as item (item.id)}
+						<button
+							type="button"
+							class="chip chip-toggle"
+							class:chip-on={(editing.item_ids ?? []).includes(item.id)}
+							aria-pressed={(editing.item_ids ?? []).includes(item.id)}
+							title={item.reference_image_path ? t('script.itemHasImage') : t('script.itemNoImage')}
+							onclick={() => toggleItem(item.id)}
+						>
+							<Icon name="paperclip" size={12} />
+							{item.name}
+						</button>
+					{/each}
+				</div>
+				<span class="field-hint">{t('script.itemsHint')}</span>
+			{:else}
+				<span class="field-hint">{t('script.itemsEmpty')}</span>
+			{/if}
+		</div>
 	{/if}
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => (editOpen = false)}>{t('common.cancel')}</Button>

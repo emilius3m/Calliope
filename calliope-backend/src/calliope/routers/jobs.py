@@ -9,9 +9,11 @@ from calliope.agent.video_agent import enqueue_video_jobs, preview_clip_prompt
 from calliope.comfyui.client import ComfyUIClient
 from calliope.config import settings
 from calliope.db import get_db
+from calliope.enhancement import enqueue_enhancements
 from calliope.events.bus import event_bus
 from calliope.export.runner import kill_running
 from calliope.models.schemas import (
+    EnhanceVideosRequest,
     GenerateVideosRequest,
     JobCreate,
     PreviewPromptRequest,
@@ -105,6 +107,23 @@ async def preview_prompt(project_id: int, payload: PreviewPromptRequest) -> dict
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/projects/{project_id}/enhance-videos")
+async def enhance_videos(project_id: int, payload: EnhanceVideosRequest) -> dict[str, Any]:
+    try:
+        jobs, skipped = enqueue_enhancements(
+            project_id, payload.workflow_id, clip_ids=payload.clip_ids,
+            input_values=payload.input_values, output_node_id=payload.output_node_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    for job in jobs:
+        await event_bus.publish("job.created", {
+            "job_id": job["id"], "project_id": project_id, "kind": "enhancement",
+            "message": f"Enhance clip #{job['clip_id']}",
+        })
+    return {"ok": True, "jobs": [_job_public(j) for j in jobs], "skipped": skipped}
 
 
 @router.post("/projects/{project_id}/export")

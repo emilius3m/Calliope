@@ -86,6 +86,14 @@ CREATE TABLE IF NOT EXISTS scene_characters (
     PRIMARY KEY (scene_id, character_id)
 );
 
+-- Props on screen in a scene. Like the cast, their reference images reach
+-- the video workflow (after the characters and the location).
+CREATE TABLE IF NOT EXISTS scene_items (
+    scene_id INTEGER NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    PRIMARY KEY (scene_id, item_id)
+);
+
 -- Shot-level layer: one script scene expands into MANY renderable clips
 -- (coverage). The clip — not the scene — is the unit that gets generated,
 -- holds video settings, and lands in the export timeline. Scenes keep the
@@ -103,6 +111,10 @@ CREATE TABLE IF NOT EXISTS clips (
     workflow_id INTEGER,
     clip_path TEXT,
     video_settings_json TEXT,
+    enhanced_path TEXT,
+    enhancement_source_path TEXT,
+    enhancement_settings_json TEXT,
+    use_enhanced INTEGER NOT NULL DEFAULT 0,
     chain_from_prev INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -330,6 +342,12 @@ async def migrate_db(db_path: Path) -> None:
         )
     if "video_settings_json" not in scene_cols:
         conn.execute("ALTER TABLE scenes ADD COLUMN video_settings_json TEXT")
+    clip_cols = {r[1] for r in conn.execute("PRAGMA table_info(clips)").fetchall()}
+    for column in ("enhanced_path", "enhancement_source_path", "enhancement_settings_json"):
+        if column not in clip_cols:
+            conn.execute(f"ALTER TABLE clips ADD COLUMN {column} TEXT")
+    if "use_enhanced" not in clip_cols:
+        conn.execute("ALTER TABLE clips ADD COLUMN use_enhanced INTEGER NOT NULL DEFAULT 0")
     # Clips layer: mirror each existing scene's production state into a
     # default clip #1 so the 1:1 legacy behavior keeps working unchanged.
     # Guarded on table emptiness — runs once, never touches clips the user
@@ -416,6 +434,67 @@ def ensure_default_clip(conn: sqlite3.Connection, scene_id: int, project_id: int
     )
 
 
+def scene_items(conn: sqlite3.Connection, scene_id: int) -> list[dict[str, Any]]:
+    """The items (props) linked to a scene, in id order."""
+    rows = conn.execute(
+        """
+        SELECT i.* FROM items i
+        JOIN scene_items si ON si.item_id = i.id
+        WHERE si.scene_id = ?
+        ORDER BY i.id
+        """,
+        (scene_id,),
+    ).fetchall()
+    return [row_to_dict(r) for r in rows]
+
+
+def set_scene_items(
+    conn: sqlite3.Connection, scene_id: int, project_id: int, item_ids: list[int]
+) -> None:
+    """Replace a scene's items; ids from another project are ignored."""
+    conn.execute("DELETE FROM scene_items WHERE scene_id = ?", (scene_id,))
+    for iid in item_ids:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO scene_items (scene_id, item_id)
+            SELECT ?, id FROM items WHERE id = ? AND project_id = ?
+            """,
+            (scene_id, iid, project_id),
+        )
+
+
+def sync_clip_durations(conn: sqlite3.Connection, scene_id: int, duration_sec: float) -> None:
+    """Carry a new scene duration down to its clips (the renderables).
+
+    One clip takes the scene duration as is (the 1:1 model of
+    ensure_default_clip). Several clips are rescaled in proportion to their
+    current lengths, in whole seconds (>= 1 each) that add up to the scene.
+    """
+    rows = conn.execute(
+        "SELECT id, duration_sec FROM clips WHERE scene_id = ? ORDER BY order_index, id",
+        (scene_id,),
+    ).fetchall()
+    if not rows or not duration_sec or duration_sec <= 0:
+        return
+    if len(rows) == 1:
+        conn.execute("UPDATE clips SET duration_sec = ? WHERE id = ?", (duration_sec, rows[0]["id"]))
+        return
+    total = int(round(duration_sec))
+    if total < len(rows):
+        return  # cannot give every clip a second; leave the shot list alone
+    weights = [float(r["duration_sec"] or 0) for r in rows]
+    if sum(weights) <= 0:
+        weights = [1.0] * len(rows)
+    spare = total - len(rows)  # every clip keeps >= 1s; share the rest by weight
+    raw = [spare * w / sum(weights) for w in weights]
+    shares = [int(x) for x in raw]
+    by_remainder = sorted(range(len(rows)), key=lambda i: raw[i] - shares[i], reverse=True)
+    for i in by_remainder[: spare - sum(shares)]:
+        shares[i] += 1
+    for row, share in zip(rows, shares):
+        conn.execute("UPDATE clips SET duration_sec = ? WHERE id = ?", (1 + share, row["id"]))
+
+
 # Columns that store absolute asset paths. When the app folder moves, these
 # still point at the old install root and /api/file rejects them (403).
 _PATH_COLUMNS = {
@@ -424,7 +503,7 @@ _PATH_COLUMNS = {
     "locations": ["reference_image_path"],
     "items": ["reference_image_path"],
     "scenes": ["env_image_path", "video_path"],
-    "clips": ["clip_path"],
+    "clips": ["clip_path", "enhanced_path", "enhancement_source_path"],
     "canvas_node": ["artifact_path"],
     "shot_capture": ["file_path"],
 }
@@ -488,16 +567,58 @@ def rebase_stale_asset_paths(conn: sqlite3.Connection, data_dir: Path, assets_di
                 (json.dumps(new_paths), row["id"]),
             )
             count += 1
+    # Enhancement jobs snapshot their original; export jobs record the exact
+    # film sources. Keep those snapshots consistent after an install moves.
+    rows = conn.execute(
+        "SELECT id, payload_json FROM jobs "
+        "WHERE kind IN ('enhancement', 'export') AND payload_json IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        original = json.dumps(payload)
+        if "source_path" in payload:
+            payload["source_path"] = (
+                _rebase_path(payload["source_path"], data_dir, assets_dir)
+                or payload["source_path"]
+            )
+        values = payload.get("input_values")
+        if isinstance(values, dict):
+            payload["input_values"] = {
+                k: (_rebase_path(v, data_dir, assets_dir) or v)
+                for k, v in values.items()
+            }
+        sources = payload.get("clip_sources")
+        if isinstance(sources, list):
+            for source in sources:
+                if isinstance(source, dict) and "path" in source:
+                    source["path"] = (
+                        _rebase_path(source["path"], data_dir, assets_dir) or source["path"]
+                    )
+        rebased_payload = json.dumps(payload)
+        if rebased_payload != original:
+            conn.execute(
+                "UPDATE jobs SET payload_json = ? WHERE id = ?", (rebased_payload, row["id"])
+            )
+            count += 1
     # Scene/clip video settings embed absolute asset paths (ref images,
     # uploaded clips) in input_values — rebase those too so a moved install
     # keeps the saved setups working.
-    for table in ("scenes", "clips"):
+    for table, settings_column in (
+        ("scenes", "video_settings_json"),
+        ("clips", "video_settings_json"),
+        ("clips", "enhancement_settings_json"),
+    ):
         rows = conn.execute(
-            f"SELECT id, video_settings_json FROM {table} WHERE video_settings_json IS NOT NULL"
+            f"SELECT id, {settings_column} FROM {table} WHERE {settings_column} IS NOT NULL"
         ).fetchall()
         for row in rows:
             try:
-                data = json.loads(row["video_settings_json"] or "{}")
+                data = json.loads(row[settings_column] or "{}")
             except json.JSONDecodeError:
                 continue
             if not isinstance(data, dict):
@@ -512,7 +633,7 @@ def rebase_stale_asset_paths(conn: sqlite3.Connection, data_dir: Path, assets_di
             if isinstance(draft, str) and not draft:
                 data.pop("prompt_draft", None)
             conn.execute(
-                f"UPDATE {table} SET video_settings_json = ? WHERE id = ?",
+                f"UPDATE {table} SET {settings_column} = ? WHERE id = ?",
                 (json.dumps(data), row["id"]),
             )
             count += 1

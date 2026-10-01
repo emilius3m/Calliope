@@ -25,6 +25,10 @@ def extract_default_value(node: dict[str, Any]) -> str | int | float | None:
         return None
     if isinstance(inputs.get("text"), str):
         return inputs["text"]
+    if isinstance(inputs.get("positive_prompt"), str):
+        return inputs["positive_prompt"]
+    if isinstance(inputs.get("prompt"), str):
+        return inputs["prompt"]
     value = inputs.get("value")
     if isinstance(value, (str, int, float)):
         return value

@@ -1,683 +1,854 @@
-import type { AgentComposerPayload } from '$lib/agentComposer';
-import { t } from '$lib/i18n.svelte';
+import type { AgentComposerPayload } from "$lib/agentComposer";
+import { t } from "$lib/i18n.svelte";
 
-const API_BASE = '';
+const API_BASE = "";
 
 export interface Project {
-	id: number;
-	title: string;
-	idea: string | null;
-	genre: string | null;
-	tone: string | null;
-	target_duration: string | null;
-	cover_path: string | null;
-	status: string;
-	created_at: string;
-	updated_at: string;
-	stats?: ProjectStats;
+  id: number;
+  title: string;
+  idea: string | null;
+  genre: string | null;
+  tone: string | null;
+  target_duration: string | null;
+  cover_path: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  stats?: ProjectStats;
 }
 
 export interface ProjectStats {
-	scene_count: number;
-	character_count: number;
-	asset_ready_count: number;
-	asset_total_count: number;
+  scene_count: number;
+  character_count: number;
+  asset_ready_count: number;
+  asset_total_count: number;
 }
 
 export interface ProjectCreate {
-	title: string;
-	idea?: string;
-	genre?: string;
-	tone?: string;
-	target_duration?: string;
+  title: string;
+  idea?: string;
+  genre?: string;
+  tone?: string;
+  target_duration?: string;
 }
 
 export interface Beat {
-	id: number;
-	order_index: number;
-	title: string;
-	description: string | null;
+  id: number;
+  order_index: number;
+  title: string;
+  description: string | null;
 }
 
 export interface Character {
-	id: number;
-	name: string;
-	role: string | null;
-	age: string | null;
-	appearance: string | null;
-	personality: string | null;
-	portrait_path: string | null;
-	sheet_path: string | null;
-	consistency_prompt: string | null;
+  id: number;
+  name: string;
+  role: string | null;
+  age: string | null;
+  appearance: string | null;
+  personality: string | null;
+  portrait_path: string | null;
+  sheet_path: string | null;
+  consistency_prompt: string | null;
 }
 
 export interface Location {
-	id: number;
-	name: string;
-	description: string | null;
-	reference_image_path: string | null;
-	consistency_prompt: string | null;
+  id: number;
+  name: string;
+  description: string | null;
+  reference_image_path: string | null;
+  consistency_prompt: string | null;
 }
 
 export interface Item {
-	id: number;
-	name: string;
-	description: string | null;
-	reference_image_path: string | null;
-	consistency_prompt: string | null;
+  id: number;
+  name: string;
+  description: string | null;
+  reference_image_path: string | null;
+  consistency_prompt: string | null;
 }
 
 export interface StoryData {
-	project: Project;
-	beats: Beat[];
-	characters: Character[];
-	locations: Location[];
-	items: Item[];
+  project: Project;
+  beats: Beat[];
+  characters: Character[];
+  locations: Location[];
+  items: Item[];
 }
 
 export interface LlmProfile {
-	id: string;
-	name: string;
-	base_url: string;
-	model: string;
-	api_key: boolean;
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  api_key: boolean;
 }
 
 export interface Settings {
-	host: string;
-	port: number;
-	data_dir: string;
-	assets_dir: string;
-	agent_workspace_dir: string;
-	db_name: string;
-	llm_base_url: string;
-	llm_model: string;
-	llm_api_key: boolean;
-	llm_profiles: LlmProfile[];
-	llm_active_id: string | null;
-	comfyui_base_url: string;
-	queue_concurrency: number;
-	queue_poll_interval_sec: number;
-	queue_poll_timeout_sec: number;
-	queue_max_retries: number;
-	agent_max_steps: number;
-	agent_hardening_prompt: string;
-	agent_history_char_budget: number;
-	agent_llm_assignments: Record<string, string | null>;
-	agent_shell_enabled: boolean;
-	dry_run: boolean;
+  host: string;
+  port: number;
+  data_dir: string;
+  assets_dir: string;
+  agent_workspace_dir: string;
+  db_name: string;
+  llm_base_url: string;
+  llm_model: string;
+  llm_api_key: boolean;
+  llm_profiles: LlmProfile[];
+  llm_active_id: string | null;
+  comfyui_base_url: string;
+  queue_concurrency: number;
+  queue_poll_interval_sec: number;
+  queue_poll_timeout_sec: number;
+  queue_max_retries: number;
+  agent_max_steps: number;
+  agent_hardening_prompt: string;
+  agent_history_char_budget: number;
+  /** Who writes content for MCP calls: the MCP client or Calliope's LLM. */
+  mcp_content_source?: "client" | "calliope";
+  agent_llm_assignments: Record<string, string | null>;
+  agent_shell_enabled: boolean;
+  dry_run: boolean;
 }
 
 import type {
-	Job,
-	Scene,
-	SceneVideoSettings,
-	Clip,
-	Workflow,
-	ComfyDynamicInput,
-	ComfyDynamicOutput,
-} from './comfy/types';
-export type { Job, Scene, SceneVideoSettings, Clip, Workflow, ComfyDynamicInput, ComfyDynamicOutput };
+  Job,
+  Scene,
+  SceneVideoSettings,
+  Clip,
+  Workflow,
+  ComfyDynamicInput,
+  ComfyDynamicOutput,
+} from "./comfy/types";
+export type {
+  Job,
+  Scene,
+  SceneVideoSettings,
+  Clip,
+  Workflow,
+  ComfyDynamicInput,
+  ComfyDynamicOutput,
+};
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-	const res = await fetch(`${API_BASE}${path}`, {
-		...init,
-		headers: {
-			'Content-Type': 'application/json',
-			...init?.headers,
-		},
-	});
-	if (!res.ok) {
-		const body = await res.text().catch(() => t('api.unknownError'));
-		throw new Error(`${res.status}: ${body}`);
-	}
-	return res.json() as Promise<T>;
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => t("api.unknownError"));
+    throw new Error(`${res.status}: ${body}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 /** Multipart variant of api() — FormData sets its own Content-Type boundary. */
 async function apiUpload<T>(path: string, form: FormData): Promise<T> {
-	const res = await fetch(`${API_BASE}${path}`, { method: 'POST', body: form });
-	if (!res.ok) {
-		const body = await res.text().catch(() => t('api.unknownError'));
-		throw new Error(`${res.status}: ${body}`);
-	}
-	return res.json() as Promise<T>;
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
+  if (!res.ok) {
+    const body = await res.text().catch(() => t("api.unknownError"));
+    throw new Error(`${res.status}: ${body}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 export function assetUrl(path: string | null | undefined): string | null {
-	if (!path) return null;
-	return `/api/file?path=${encodeURIComponent(path)}`;
+  if (!path) return null;
+  return `/api/file?path=${encodeURIComponent(path)}`;
+}
+
+/** Summary of POST /api/projects/import. */
+export interface ProjectImportResult {
+  ok: boolean;
+  project_id: number;
+  title: string;
+  scenes: number;
+  clips: number;
+  files: number;
+  include_videos: boolean;
+  missing_workflows: string[];
+  drafts_kept_current: number;
 }
 
 export const projects = {
-	list: () => api<Project[]>('/api/projects'),
-	create: (payload: ProjectCreate) =>
-		api<Project>('/api/projects', { method: 'POST', body: JSON.stringify(payload) }),
-	get: (id: number) => api<Project & { stats: ProjectStats }>(`/api/projects/${id}`),
-	update: (id: number, payload: Partial<ProjectCreate & { status?: string; cover_path?: string | null }>) =>
-		api<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-	delete: (id: number) => api<{ ok: boolean }>(`/api/projects/${id}`, { method: 'DELETE' }),
-	getStory: (id: number) => api<StoryData>(`/api/projects/${id}/story`),
-	updateBeat: (projectId: number, beatId: number, payload: Partial<Beat>) =>
-		api<Beat>(`/api/projects/${projectId}/beats/${beatId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	updateCharacter: (projectId: number, characterId: number, payload: Partial<Character>) =>
-		api<Character>(`/api/projects/${projectId}/characters/${characterId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	updateLocation: (projectId: number, locationId: number, payload: Partial<Location>) =>
-		api<Location>(`/api/projects/${projectId}/locations/${locationId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	updateItem: (projectId: number, itemId: number, payload: Partial<Item>) =>
-		api<Item>(`/api/projects/${projectId}/items/${itemId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	deleteBeat: (projectId: number, beatId: number) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/beats/${beatId}`, { method: 'DELETE' }),
-	deleteCharacter: (projectId: number, characterId: number) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/characters/${characterId}`, {
-			method: 'DELETE',
-		}),
-	deleteLocation: (projectId: number, locationId: number) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/locations/${locationId}`, {
-			method: 'DELETE',
-		}),
-	deleteItem: (projectId: number, itemId: number) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/items/${itemId}`, {
-			method: 'DELETE',
-		}),
-	getScenes: (id: number) =>
-		api<{ scenes: Scene[]; estimated_duration_sec: number }>(`/api/projects/${id}/scenes`),
-	updateScene: (projectId: number, sceneId: number, payload: Record<string, unknown>) =>
-		api<Scene>(`/api/projects/${projectId}/scenes/${sceneId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	createScene: (projectId: number, payload: Record<string, unknown>) =>
-		api<Scene>(`/api/projects/${projectId}/scenes`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	deleteScene: (projectId: number, sceneId: number) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/scenes/${sceneId}`, { method: 'DELETE' }),
-	reorderScenes: (projectId: number, sceneIds: number[]) =>
-		api<{ scenes: Scene[] }>(`/api/projects/${projectId}/scenes/reorder`, {
-			method: 'POST',
-			body: JSON.stringify({ scene_ids: sceneIds }),
-		}),
-	createClip: (projectId: number, sceneId: number, payload: Record<string, unknown>) =>
-		api<Clip>(`/api/projects/${projectId}/scenes/${sceneId}/clips`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	updateClip: (projectId: number, clipId: number, payload: Record<string, unknown>) =>
-		api<Clip>(`/api/projects/${projectId}/clips/${clipId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	deleteClip: (projectId: number, clipId: number) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/clips/${clipId}`, { method: 'DELETE' }),
-	reorderClips: (projectId: number, sceneId: number, clipIds: number[]) =>
-		api<{ ok: boolean }>(`/api/projects/${projectId}/scenes/${sceneId}/clips/reorder`, {
-			method: 'POST',
-			body: JSON.stringify({ clip_ids: clipIds }),
-		}),
-	expandClips: (
-		projectId: number,
-		payload: { scene_ids?: number[]; all?: boolean; guidance?: string } = {},
-	) =>
-		api<{
-			ok: boolean;
-			scenes: Array<{ scene_id: number; clip_count: number; total_duration_sec: number }>;
-			total_clips: number;
-		}>(`/api/projects/${projectId}/expand-clips`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	generateAssets: (
-		id: number,
-		payload: {
-			missing_only?: boolean;
-			character_ids?: number[];
-			location_ids?: number[];
-			item_ids?: number[];
-			workflow_id?: number;
-			input_values?: Record<string, unknown>;
-			asset_target?: 'sheet';
-			prompt?: string;
-		} = {},
-	) =>
-		api<{ ok: boolean; jobs: Job[] }>(`/api/projects/${id}/generate-assets`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	getAssets: (id: number) =>
-		api<{ characters: Character[]; locations: Location[]; items: Item[] }>(
-			`/api/projects/${id}/assets`,
-		),
+  list: () => api<Project[]>("/api/projects"),
+  /** Download URL of the project archive (.zip); videos only when asked. */
+  exportUrl: (id: number, includeVideos: boolean) =>
+    `${API_BASE}/api/projects/${id}/export?include_videos=${includeVideos}`,
+  importArchive: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiUpload<ProjectImportResult>("/api/projects/import", form);
+  },
+  create: (payload: ProjectCreate) =>
+    api<Project>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  get: (id: number) =>
+    api<Project & { stats: ProjectStats }>(`/api/projects/${id}`),
+  update: (
+    id: number,
+    payload: Partial<
+      ProjectCreate & { status?: string; cover_path?: string | null }
+    >,
+  ) =>
+    api<Project>(`/api/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  delete: (id: number) =>
+    api<{ ok: boolean }>(`/api/projects/${id}`, { method: "DELETE" }),
+  getStory: (id: number) => api<StoryData>(`/api/projects/${id}/story`),
+  updateBeat: (projectId: number, beatId: number, payload: Partial<Beat>) =>
+    api<Beat>(`/api/projects/${projectId}/beats/${beatId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  updateCharacter: (
+    projectId: number,
+    characterId: number,
+    payload: Partial<Character>,
+  ) =>
+    api<Character>(`/api/projects/${projectId}/characters/${characterId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  updateLocation: (
+    projectId: number,
+    locationId: number,
+    payload: Partial<Location>,
+  ) =>
+    api<Location>(`/api/projects/${projectId}/locations/${locationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  updateItem: (projectId: number, itemId: number, payload: Partial<Item>) =>
+    api<Item>(`/api/projects/${projectId}/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteBeat: (projectId: number, beatId: number) =>
+    api<{ ok: boolean }>(`/api/projects/${projectId}/beats/${beatId}`, {
+      method: "DELETE",
+    }),
+  deleteCharacter: (projectId: number, characterId: number) =>
+    api<{ ok: boolean }>(
+      `/api/projects/${projectId}/characters/${characterId}`,
+      {
+        method: "DELETE",
+      },
+    ),
+  deleteLocation: (projectId: number, locationId: number) =>
+    api<{ ok: boolean }>(`/api/projects/${projectId}/locations/${locationId}`, {
+      method: "DELETE",
+    }),
+  deleteItem: (projectId: number, itemId: number) =>
+    api<{ ok: boolean }>(`/api/projects/${projectId}/items/${itemId}`, {
+      method: "DELETE",
+    }),
+  getScenes: (id: number) =>
+    api<{ scenes: Scene[]; estimated_duration_sec: number }>(
+      `/api/projects/${id}/scenes`,
+    ),
+  updateScene: (
+    projectId: number,
+    sceneId: number,
+    payload: Record<string, unknown>,
+  ) =>
+    api<Scene>(`/api/projects/${projectId}/scenes/${sceneId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  createScene: (projectId: number, payload: Record<string, unknown>) =>
+    api<Scene>(`/api/projects/${projectId}/scenes`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteScene: (projectId: number, sceneId: number) =>
+    api<{ ok: boolean }>(`/api/projects/${projectId}/scenes/${sceneId}`, {
+      method: "DELETE",
+    }),
+  reorderScenes: (projectId: number, sceneIds: number[]) =>
+    api<{ scenes: Scene[] }>(`/api/projects/${projectId}/scenes/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ scene_ids: sceneIds }),
+    }),
+  createClip: (
+    projectId: number,
+    sceneId: number,
+    payload: Record<string, unknown>,
+  ) =>
+    api<Clip>(`/api/projects/${projectId}/scenes/${sceneId}/clips`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateClip: (
+    projectId: number,
+    clipId: number,
+    payload: Record<string, unknown>,
+  ) =>
+    api<Clip>(`/api/projects/${projectId}/clips/${clipId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteClip: (projectId: number, clipId: number) =>
+    api<{ ok: boolean }>(`/api/projects/${projectId}/clips/${clipId}`, {
+      method: "DELETE",
+    }),
+  reorderClips: (projectId: number, sceneId: number, clipIds: number[]) =>
+    api<{ ok: boolean }>(
+      `/api/projects/${projectId}/scenes/${sceneId}/clips/reorder`,
+      {
+        method: "POST",
+        body: JSON.stringify({ clip_ids: clipIds }),
+      },
+    ),
+  expandClips: (
+    projectId: number,
+    payload: { scene_ids?: number[]; all?: boolean; guidance?: string } = {},
+  ) =>
+    api<{
+      ok: boolean;
+      scenes: Array<{
+        scene_id: number;
+        clip_count: number;
+        total_duration_sec: number;
+      }>;
+      total_clips: number;
+    }>(`/api/projects/${projectId}/expand-clips`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  generateAssets: (
+    id: number,
+    payload: {
+      missing_only?: boolean;
+      character_ids?: number[];
+      location_ids?: number[];
+      item_ids?: number[];
+      workflow_id?: number;
+      input_values?: Record<string, unknown>;
+      asset_target?: "sheet";
+      prompt?: string;
+    } = {},
+  ) =>
+    api<{ ok: boolean; jobs: Job[] }>(`/api/projects/${id}/generate-assets`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getAssets: (id: number) =>
+    api<{ characters: Character[]; locations: Location[]; items: Item[] }>(
+      `/api/projects/${id}/assets`,
+    ),
 };
 
 export const settings = {
-	get: () => api<Settings>('/api/settings'),
-	update: (payload: Record<string, unknown>) =>
-		api<Settings>('/api/settings', { method: 'POST', body: JSON.stringify(payload) }),
+  get: () => api<Settings>("/api/settings"),
+  update: (payload: Record<string, unknown>) =>
+    api<Settings>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
 
 export const workflows = {
-	list: () => api<Workflow[]>('/api/workflows'),
-	analyze: (workflow_json: Record<string, unknown>) =>
-		api<{
-			inputs: ComfyDynamicInput[];
-			outputs: ComfyDynamicOutput[];
-			suggested_profile?: string;
-		}>('/api/workflows/analyze', {
-			method: 'POST',
-			body: JSON.stringify({ workflow_json }),
-		}),
-	reanalyze: (id: number) =>
-		api<Workflow>(`/api/workflows/${id}/reanalyze`, { method: 'POST' }),
-	create: (payload: {
-		name: string;
-		kind: 'image' | 'video';
-		workflow_json: Record<string, unknown>;
-		description?: string;
-		prompt_profile?: string;
-	}) => api<Workflow>('/api/workflows', { method: 'POST', body: JSON.stringify(payload) }),
-	update: (
-		id: number,
-		payload: Partial<{
-			name: string;
-			kind: string;
-			is_enabled: boolean;
-			description: string;
-			prompt_profile: string;
-		}>,
-	) => api<Workflow>(`/api/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-	delete: (id: number) => api<{ ok: boolean }>(`/api/workflows/${id}`, { method: 'DELETE' }),
-	get: (id: number) => api<Workflow>(`/api/workflows/${id}`),
+  list: () => api<Workflow[]>("/api/workflows"),
+  analyze: (workflow_json: Record<string, unknown>) =>
+    api<{
+      inputs: ComfyDynamicInput[];
+      outputs: ComfyDynamicOutput[];
+      suggested_profile?: string;
+    }>("/api/workflows/analyze", {
+      method: "POST",
+      body: JSON.stringify({ workflow_json }),
+    }),
+  reanalyze: (id: number) =>
+    api<Workflow>(`/api/workflows/${id}/reanalyze`, { method: "POST" }),
+  create: (payload: {
+    name: string;
+    kind: "image" | "video";
+    workflow_json: Record<string, unknown>;
+    description?: string;
+    prompt_profile?: string;
+  }) =>
+    api<Workflow>("/api/workflows", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  update: (
+    id: number,
+    payload: Partial<{
+      name: string;
+      kind: string;
+      is_enabled: boolean;
+      description: string;
+      prompt_profile: string;
+    }>,
+  ) =>
+    api<Workflow>(`/api/workflows/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  delete: (id: number) =>
+    api<{ ok: boolean }>(`/api/workflows/${id}`, { method: "DELETE" }),
+  get: (id: number) => api<Workflow>(`/api/workflows/${id}`),
 };
 
 export const jobsApi = {
-	list: (projectId?: number) =>
-		api<Job[]>(`/api/jobs${projectId != null ? `?project_id=${projectId}` : ''}`),
-	retry: (id: number) => api<Job>(`/api/jobs/${id}/retry`, { method: 'POST' }),
-	cancel: (id: number) => api<{ ok: boolean }>(`/api/jobs/${id}/cancel`, { method: 'POST' }),
-	pause: () => api<{ ok: boolean; paused: boolean }>('/api/jobs/pause', { method: 'POST' }),
-	resume: () => api<{ ok: boolean; paused: boolean }>('/api/jobs/resume', { method: 'POST' }),
-	queueStatus: () => api<{ paused: boolean }>('/api/jobs/queue-status'),
-	generateVideos: (
-		projectId: number,
-		payload: {
-			scene_ids?: number[];
-			clip_ids?: number[];
-			workflow_id?: number;
-			input_values?: Record<string, unknown>;
-			prompts?: Record<string, string>;
-		} = {},
-	) =>
-		api<{ ok: boolean; jobs: Job[] }>(`/api/jobs/projects/${projectId}/generate-videos`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	previewPrompt: (
-		projectId: number,
-		payload: {
-			clip_id?: number;
-			scene_id?: number;
-			workflow_id?: number;
-			input_values?: Record<string, unknown>;
-			force?: boolean;
-		},
-	) =>
-		api<{
-			prompt: string;
-			profile: string;
-			from_draft: boolean;
-			based_on: string;
-			critic?: { ok: boolean; notes: string[] };
-		}>(`/api/jobs/projects/${projectId}/preview-prompt`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	exportFilm: (projectId: number) =>
-		api<{ ok: boolean; job: Job }>(`/api/jobs/projects/${projectId}/export`, { method: 'POST' }),
+  list: (projectId?: number) =>
+    api<Job[]>(
+      `/api/jobs${projectId != null ? `?project_id=${projectId}` : ""}`,
+    ),
+  retry: (id: number) => api<Job>(`/api/jobs/${id}/retry`, { method: "POST" }),
+  cancel: (id: number) =>
+    api<{ ok: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  pause: () =>
+    api<{ ok: boolean; paused: boolean }>("/api/jobs/pause", {
+      method: "POST",
+    }),
+  resume: () =>
+    api<{ ok: boolean; paused: boolean }>("/api/jobs/resume", {
+      method: "POST",
+    }),
+  queueStatus: () => api<{ paused: boolean }>("/api/jobs/queue-status"),
+  generateVideos: (
+    projectId: number,
+    payload: {
+      scene_ids?: number[];
+      clip_ids?: number[];
+      workflow_id?: number;
+      input_values?: Record<string, unknown>;
+      prompts?: Record<string, string>;
+    } = {},
+  ) =>
+    api<{ ok: boolean; jobs: Job[] }>(
+      `/api/jobs/projects/${projectId}/generate-videos`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
+  previewPrompt: (
+    projectId: number,
+    payload: {
+      clip_id?: number;
+      scene_id?: number;
+      workflow_id?: number;
+      input_values?: Record<string, unknown>;
+      force?: boolean;
+    },
+  ) =>
+    api<{
+      prompt: string;
+      profile: string;
+      from_draft: boolean;
+      based_on: string;
+      critic?: { ok: boolean; notes: string[] };
+    }>(`/api/jobs/projects/${projectId}/preview-prompt`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  enhanceVideos: (
+    projectId: number,
+    payload: {
+      workflow_id: number;
+      clip_ids?: number[];
+      input_values?: Record<string, string | number>;
+      output_node_id?: string;
+    },
+  ) =>
+    api<{
+      ok: boolean;
+      jobs: Job[];
+      skipped: Array<{ clip_id: number; reason: string }>;
+    }>(`/api/jobs/projects/${projectId}/enhance-videos`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  exportFilm: (projectId: number) =>
+    api<{ ok: boolean; job: Job }>(`/api/jobs/projects/${projectId}/export`, {
+      method: "POST",
+    }),
 };
 
-export type PlaygroundAttachTarget = 'character_sheet' | 'location' | 'item' | 'scene';
+export type PlaygroundAttachTarget =
+  "character_sheet" | "location" | "item" | "scene";
 
-export type UploadKind = 'image' | 'video' | 'audio' | 'document';
+export type UploadKind = "image" | "video" | "audio" | "document";
 
 export interface PlaygroundUpload {
-	ok: boolean;
-	path: string;
-	name: string;
-	kind: UploadKind;
+  ok: boolean;
+  path: string;
+  name: string;
+  kind: UploadKind;
 }
 
 export interface PlaygroundUploadListItem {
-	name: string;
-	path: string;
-	kind: UploadKind;
-	size: number;
-	mtime: string;
+  name: string;
+  path: string;
+  kind: UploadKind;
+  size: number;
+  mtime: string;
 }
 
 export const playgroundApi = {
-	project: () => api<Project>('/api/playground/project'),
-	jobs: () => api<Job[]>('/api/playground/jobs'),
-	generate: (payload: { workflow_id: number; input_values?: Record<string, unknown> }) =>
-		api<{ ok: boolean; job: Job }>('/api/playground/generate', {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	upload: (file: File) => {
-		const form = new FormData();
-		form.append('file', file);
-		return apiUpload<PlaygroundUpload>('/api/playground/uploads', form);
-	},
-	listUploads: () => api<PlaygroundUploadListItem[]>('/api/playground/uploads'),
-	deleteJob: (jobId: number) =>
-		api<{ ok: boolean; job_id: number; deleted_files: string[]; missing_files: string[] }>(
-			`/api/playground/jobs/${jobId}`,
-			{ method: 'DELETE' },
-		),
-	attach: (payload: {
-		path: string;
-		project_id: number;
-		target: PlaygroundAttachTarget;
-		character_id?: number;
-		location_id?: number;
-		item_id?: number;
-		scene_id?: number;
-		name?: string;
-	}) =>
-		api<{ ok: boolean; path: string; target: string; project_id: number; item_id?: number }>(
-			'/api/playground/attach',
-			{ method: 'POST', body: JSON.stringify(payload) },
-		),
+  project: () => api<Project>("/api/playground/project"),
+  jobs: () => api<Job[]>("/api/playground/jobs"),
+  generate: (payload: {
+    workflow_id: number;
+    input_values?: Record<string, unknown>;
+  }) =>
+    api<{ ok: boolean; job: Job }>("/api/playground/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  upload: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiUpload<PlaygroundUpload>("/api/playground/uploads", form);
+  },
+  listUploads: () => api<PlaygroundUploadListItem[]>("/api/playground/uploads"),
+  deleteJob: (jobId: number) =>
+    api<{
+      ok: boolean;
+      job_id: number;
+      deleted_files: string[];
+      missing_files: string[];
+    }>(`/api/playground/jobs/${jobId}`, { method: "DELETE" }),
+  attach: (payload: {
+    path: string;
+    project_id: number;
+    target: PlaygroundAttachTarget;
+    character_id?: number;
+    location_id?: number;
+    item_id?: number;
+    scene_id?: number;
+    name?: string;
+  }) =>
+    api<{
+      ok: boolean;
+      path: string;
+      target: string;
+      project_id: number;
+      item_id?: number;
+    }>("/api/playground/attach", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ── Asset Library (unlinked Playground media) ───────────────────────────
 
 export interface LibraryMediaItem {
-	path: string;
-	name: string;
-	kind: 'image' | 'video';
-	size: number;
-	mtime: string;
+  path: string;
+  name: string;
+  kind: "image" | "video";
+  size: number;
+  mtime: string;
 }
 
 export interface LibraryDeleteResult {
-	path: string;
-	status: 'deleted' | 'kept';
-	reason?: string;
+  path: string;
+  status: "deleted" | "kept";
+  reason?: string;
 }
 
 export const libraryApi = {
-	list: () => api<LibraryMediaItem[]>('/api/library/media'),
-	deleteMany: (paths: string[]) =>
-		api<{
-			ok: boolean;
-			deleted: string[];
-			results: LibraryDeleteResult[];
-		}>('/api/library/media', { method: 'DELETE', body: JSON.stringify({ paths }) }),
+  list: () => api<LibraryMediaItem[]>("/api/library/media"),
+  deleteMany: (paths: string[]) =>
+    api<{
+      ok: boolean;
+      deleted: string[];
+      results: LibraryDeleteResult[];
+    }>("/api/library/media", {
+      method: "DELETE",
+      body: JSON.stringify({ paths }),
+    }),
 };
 
 // ── Agents (agentic harness) ────────────────────────────────────────────
 
 export interface AgentSession {
-	id: number;
-	project_id: number | null;
-	title: string;
-	status: 'idle' | 'running' | 'error';
-	/** WHERE the session was born: 'chat' (AI Canvas) or 'scene' (Build Scene rail). */
-	origin: 'chat' | 'scene';
-	created_at: string;
-	updated_at: string;
-	running?: boolean;
-	project?: { id: number; title: string; status: string } | null;
+  id: number;
+  project_id: number | null;
+  title: string;
+  status: "idle" | "running" | "error";
+  /** WHERE the session was born: 'chat' (AI Canvas) or 'scene' (Build Scene rail). */
+  origin: "chat" | "scene";
+  created_at: string;
+  updated_at: string;
+  running?: boolean;
+  project?: { id: number; title: string; status: string } | null;
 }
 
 export interface AgentMessage {
-	id: number;
-	session_id: number;
-	role: 'user' | 'assistant' | 'tool' | 'system';
-	content: string;
-	agent_name?: string | null;
-	tool_name?: string | null;
-	tool_args?: Record<string, unknown> | null;
-	tool_result?: unknown;
-	status?: string | null;
-	reasoning?: string | null;
-	created_at: string;
-	mentions?: AgentComposerPayload['mentions'];
-	attachments?: AgentComposerPayload['attachments'];
+  id: number;
+  session_id: number;
+  role: "user" | "assistant" | "tool" | "system";
+  content: string;
+  agent_name?: string | null;
+  tool_name?: string | null;
+  tool_args?: Record<string, unknown> | null;
+  tool_result?: unknown;
+  status?: string | null;
+  reasoning?: string | null;
+  created_at: string;
+  mentions?: AgentComposerPayload["mentions"];
+  attachments?: AgentComposerPayload["attachments"];
 }
 
 export interface AgentTask {
-	role: string;
-	goal: string;
-	status: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
-	index?: number;
+  role: string;
+  goal: string;
+  status: "pending" | "running" | "done" | "failed" | "skipped";
+  index?: number;
 }
 
 export interface AgentPlan {
-	tasks: AgentTask[];
-	note?: string | null;
+  tasks: AgentTask[];
+  note?: string | null;
 }
 
 export const agentApi = {
-	listSessions: (projectId?: number) =>
-		api<AgentSession[]>(
-			`/api/agent/sessions${projectId != null ? `?project_id=${projectId}` : ''}`,
-		),
-	listSceneSessions: () => api<AgentSession[]>('/api/agent/sessions?origin=scene'),
-	listLinkableProjects: () =>
-		api<{ id: number; title: string; status: string }[]>('/api/agent/projects'),
-	createSession: (payload: { title?: string; project_id?: number | null; origin?: 'chat' | 'scene' }) =>
-		api<AgentSession>('/api/agent/sessions', {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	getSession: (id: number) =>
-		api<AgentSession & { messages: AgentMessage[]; plan?: AgentPlan | null }>(
-			`/api/agent/sessions/${id}`,
-		),
-	patchSession: (
-		id: number,
-		payload: { title?: string; project_id?: number | null; unlink?: boolean },
-	) =>
-		api<AgentSession>(`/api/agent/sessions/${id}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	deleteSession: (id: number) =>
-		api<{ ok: boolean }>(`/api/agent/sessions/${id}`, { method: 'DELETE' }),
-	postMessage: (id: number, payload: AgentComposerPayload | string) => {
-		const body =
-			typeof payload === 'string'
-				? { content: payload, mentions: [], attachments: [] }
-				: payload;
-		return api<{ ok: boolean; steered?: boolean; message: AgentMessage }>(`/api/agent/sessions/${id}/messages`, {
-			method: 'POST',
-			body: JSON.stringify(body),
-		});
-	},
-	cancel: (id: number) =>
-		api<{ ok: boolean }>(`/api/agent/sessions/${id}/cancel`, { method: 'POST' }),
-	listSkills: () =>
-		api<{ name: string; description: string; version: string; tags: string[]; dir: string }[]>(
-			'/api/agent/skills',
-		),
-	listMemories: () =>
-		api<
-			{
-				id: number;
-				scope: 'global' | 'project';
-				project_id: number | null;
-				project_title: string | null;
-				content: string;
-				kind: string;
-				source: string;
-				use_count: number;
-				created_at: string;
-			}[]
-		>('/api/agent/memories'),
-	addMemory: (payload: {
-		content: string;
-		scope: 'global' | 'project';
-		project_id?: number | null;
-		kind?: string;
-	}) =>
-		api<{ ok: boolean; id: number }>('/api/agent/memories', {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	deleteMemory: (id: number) =>
-		api<{ ok: boolean }>(`/api/agent/memories/${id}`, { method: 'DELETE' }),
-	skillsPath: () => api<{ path: string }>('/api/agent/skills/path'),
-	skillFiles: (name: string) => api<{ skill: string; files: string[] }>(`/api/agent/skills/${encodeURIComponent(name)}/files`),
-	readSkillFile: (name: string, path: string) =>
-		api<{ ok: boolean; content: string; truncated: boolean }>(
-			`/api/agent/skills/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`,
-		),
+  listSessions: (projectId?: number) =>
+    api<AgentSession[]>(
+      `/api/agent/sessions${projectId != null ? `?project_id=${projectId}` : ""}`,
+    ),
+  listSceneSessions: () =>
+    api<AgentSession[]>("/api/agent/sessions?origin=scene"),
+  listLinkableProjects: () =>
+    api<{ id: number; title: string; status: string }[]>("/api/agent/projects"),
+  createSession: (payload: {
+    title?: string;
+    project_id?: number | null;
+    origin?: "chat" | "scene";
+  }) =>
+    api<AgentSession>("/api/agent/sessions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getSession: (id: number) =>
+    api<AgentSession & { messages: AgentMessage[]; plan?: AgentPlan | null }>(
+      `/api/agent/sessions/${id}`,
+    ),
+  patchSession: (
+    id: number,
+    payload: { title?: string; project_id?: number | null; unlink?: boolean },
+  ) =>
+    api<AgentSession>(`/api/agent/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteSession: (id: number) =>
+    api<{ ok: boolean }>(`/api/agent/sessions/${id}`, { method: "DELETE" }),
+  postMessage: (id: number, payload: AgentComposerPayload | string) => {
+    const body =
+      typeof payload === "string"
+        ? { content: payload, mentions: [], attachments: [] }
+        : payload;
+    return api<{ ok: boolean; steered?: boolean; message: AgentMessage }>(
+      `/api/agent/sessions/${id}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+  },
+  cancel: (id: number) =>
+    api<{ ok: boolean }>(`/api/agent/sessions/${id}/cancel`, {
+      method: "POST",
+    }),
+  listSkills: () =>
+    api<
+      {
+        name: string;
+        description: string;
+        version: string;
+        tags: string[];
+        dir: string;
+      }[]
+    >("/api/agent/skills"),
+  listMemories: () =>
+    api<
+      {
+        id: number;
+        scope: "global" | "project";
+        project_id: number | null;
+        project_title: string | null;
+        content: string;
+        kind: string;
+        source: string;
+        use_count: number;
+        created_at: string;
+      }[]
+    >("/api/agent/memories"),
+  addMemory: (payload: {
+    content: string;
+    scope: "global" | "project";
+    project_id?: number | null;
+    kind?: string;
+  }) =>
+    api<{ ok: boolean; id: number }>("/api/agent/memories", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteMemory: (id: number) =>
+    api<{ ok: boolean }>(`/api/agent/memories/${id}`, { method: "DELETE" }),
+  skillsPath: () => api<{ path: string }>("/api/agent/skills/path"),
+  skillFiles: (name: string) =>
+    api<{ skill: string; files: string[] }>(
+      `/api/agent/skills/${encodeURIComponent(name)}/files`,
+    ),
+  readSkillFile: (name: string, path: string) =>
+    api<{ ok: boolean; content: string; truncated: boolean }>(
+      `/api/agent/skills/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`,
+    ),
 };
 
 export interface CanvasInfo {
-	id: number;
-	title: string;
-	project_id: number | null;
-	agent_session_id: number | null;
-	updated_at: string;
+  id: number;
+  title: string;
+  project_id: number | null;
+  agent_session_id: number | null;
+  updated_at: string;
 }
 
 export interface CanvasNode {
-	id: number;
-	canvas_id: number;
-	type: 'entity' | 'image' | 'video' | 'text' | 'workflow';
-	title: string | null;
-	x: number;
-	y: number;
-	width: number | null;
-	height: number | null;
-	workflow_id: number | null;
-	artifact_path: string | null;
-	job_id: number | null;
-	status: string;
-	input_values_json: string;
-	entity_type: string | null;
-	entity_id: number | null;
+  id: number;
+  canvas_id: number;
+  type: "entity" | "image" | "video" | "text" | "workflow";
+  title: string | null;
+  x: number;
+  y: number;
+  width: number | null;
+  height: number | null;
+  workflow_id: number | null;
+  artifact_path: string | null;
+  job_id: number | null;
+  status: string;
+  input_values_json: string;
+  entity_type: string | null;
+  entity_id: number | null;
 }
 
 export interface CanvasEdge {
-	id: number;
-	canvas_id: number;
-	src_node_id: number;
-	dst_node_id: number;
-	kind: 'data' | 'link';
-	label: string | null;
-	dst_role: string | null;
-	dst_comfy_node_id: string | null;
+  id: number;
+  canvas_id: number;
+  src_node_id: number;
+  dst_node_id: number;
+  kind: "data" | "link";
+  label: string | null;
+  dst_role: string | null;
+  dst_comfy_node_id: string | null;
 }
 
 export interface CanvasGraph {
-	canvas: CanvasInfo & {
-		project?: { id: number; title: string } | null;
-		viewport_json?: string | null;
-	};
-	nodes: CanvasNode[];
-	edges: CanvasEdge[];
+  canvas: CanvasInfo & {
+    project?: { id: number; title: string } | null;
+    viewport_json?: string | null;
+  };
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
 }
 
 export const canvasApi = {
-	list: () => api<CanvasInfo[]>('/api/canvas'),
-	ensureForProject: (projectId: number, title?: string) =>
-		api<CanvasGraph>('/api/canvas', {
-			method: 'POST',
-			body: JSON.stringify({ project_id: projectId, ...(title ? { title } : {}) }),
-		}),
-	ensureForSession: (sessionId: number) =>
-		api<CanvasGraph>('/api/canvas', {
-			method: 'POST',
-			body: JSON.stringify({ agent_session_id: sessionId }),
-		}),
-	get: (id: number) => api<CanvasGraph>(`/api/canvas/${id}`),
-	patchCanvas: (id: number, payload: { title?: string; viewport_json?: string }) =>
-		api<CanvasInfo & { project?: { id: number; title: string } | null; viewport_json?: string | null }>(
-			`/api/canvas/${id}`,
-			{
-				method: 'PATCH',
-				body: JSON.stringify(payload),
-			},
-		),
-	patchNode: (
-		canvasId: number,
-		nodeId: number,
-		payload: {
-			x?: number;
-			y?: number;
-			title?: string;
-			input_values_json?: string;
-			status?: string;
-			job_id?: number;
-			artifact_path?: string;
-		},
-	) =>
-		api<CanvasNode>(`/api/canvas/${canvasId}/nodes/${nodeId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	createNode: (
-		canvasId: number,
-		payload: {
-			type: 'workflow' | 'image' | 'video';
-			title?: string;
-			x?: number;
-			y?: number;
-			workflow_id?: number;
-			artifact_path?: string;
-			job_id?: number;
-			status?: string;
-			input_values_json?: string;
-		},
-	) =>
-		api<CanvasNode>(`/api/canvas/${canvasId}/nodes`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	deleteNode: (canvasId: number, nodeId: number) =>
-		api<{ ok: boolean; file_deleted?: boolean; reason?: string | null }>(
-			`/api/canvas/${canvasId}/nodes/${nodeId}`,
-			{ method: 'DELETE' },
-		),
-	tidy: (canvasId: number) =>
-		api<{ ok: boolean; moved: number }>(`/api/canvas/${canvasId}/tidy`, { method: 'POST' }),
-	createEdge: (
-		canvasId: number,
-		payload: {
-			src_node_id: number;
-			dst_node_id: number;
-			kind: 'data' | 'link';
-			label?: string;
-			dst_role?: string;
-			dst_comfy_node_id?: string;
-		},
-	) =>
-		api<CanvasEdge>(`/api/canvas/${canvasId}/edges`, {
-			method: 'POST',
-			body: JSON.stringify(payload),
-		}),
-	patchEdge: (canvasId: number, edgeId: number, payload: { label: string }) =>
-		api<CanvasEdge>(`/api/canvas/${canvasId}/edges/${edgeId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(payload),
-		}),
-	deleteEdge: (canvasId: number, edgeId: number) =>
-		api<{ ok: boolean }>(`/api/canvas/${canvasId}/edges/${edgeId}`, { method: 'DELETE' }),
+  list: () => api<CanvasInfo[]>("/api/canvas"),
+  ensureForProject: (projectId: number, title?: string) =>
+    api<CanvasGraph>("/api/canvas", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: projectId,
+        ...(title ? { title } : {}),
+      }),
+    }),
+  ensureForSession: (sessionId: number) =>
+    api<CanvasGraph>("/api/canvas", {
+      method: "POST",
+      body: JSON.stringify({ agent_session_id: sessionId }),
+    }),
+  get: (id: number) => api<CanvasGraph>(`/api/canvas/${id}`),
+  patchCanvas: (
+    id: number,
+    payload: { title?: string; viewport_json?: string },
+  ) =>
+    api<
+      CanvasInfo & {
+        project?: { id: number; title: string } | null;
+        viewport_json?: string | null;
+      }
+    >(`/api/canvas/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  patchNode: (
+    canvasId: number,
+    nodeId: number,
+    payload: {
+      x?: number;
+      y?: number;
+      title?: string;
+      input_values_json?: string;
+      status?: string;
+      job_id?: number;
+      artifact_path?: string;
+    },
+  ) =>
+    api<CanvasNode>(`/api/canvas/${canvasId}/nodes/${nodeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  createNode: (
+    canvasId: number,
+    payload: {
+      type: "workflow" | "image" | "video";
+      title?: string;
+      x?: number;
+      y?: number;
+      workflow_id?: number;
+      artifact_path?: string;
+      job_id?: number;
+      status?: string;
+      input_values_json?: string;
+    },
+  ) =>
+    api<CanvasNode>(`/api/canvas/${canvasId}/nodes`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteNode: (canvasId: number, nodeId: number) =>
+    api<{ ok: boolean; file_deleted?: boolean; reason?: string | null }>(
+      `/api/canvas/${canvasId}/nodes/${nodeId}`,
+      { method: "DELETE" },
+    ),
+  tidy: (canvasId: number) =>
+    api<{ ok: boolean; moved: number }>(`/api/canvas/${canvasId}/tidy`, {
+      method: "POST",
+    }),
+  createEdge: (
+    canvasId: number,
+    payload: {
+      src_node_id: number;
+      dst_node_id: number;
+      kind: "data" | "link";
+      label?: string;
+      dst_role?: string;
+      dst_comfy_node_id?: string;
+    },
+  ) =>
+    api<CanvasEdge>(`/api/canvas/${canvasId}/edges`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  patchEdge: (canvasId: number, edgeId: number, payload: { label: string }) =>
+    api<CanvasEdge>(`/api/canvas/${canvasId}/edges/${edgeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteEdge: (canvasId: number, edgeId: number) =>
+    api<{ ok: boolean }>(`/api/canvas/${canvasId}/edges/${edgeId}`, {
+      method: "DELETE",
+    }),
 };

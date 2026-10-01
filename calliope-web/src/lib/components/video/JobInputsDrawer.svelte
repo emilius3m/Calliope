@@ -1,466 +1,600 @@
 <script lang="ts">
-	/**
-	 * JobInputsDrawer — per-scene job history + read-only view of what a job
-	 * sent to ComfyUI. Reads job.payload (persisted in jobs.payload_json,
-	 * served via _job_public): the resolved prompt plus per-node input values.
-	 * Ref assignments are labeled by matching node ids against the workflow's
-	 * input_schema roles. "Copy settings to form" loads payload.input_values
-	 * back into the live form via the caller-provided callback.
-	 */
-	import type { Job, Workflow } from '$lib/api';
-	import Button from '$lib/components/ui/Button.svelte';
-	import Icon from '$lib/components/ui/Icon.svelte';
-	import Modal from '$lib/components/ui/Modal.svelte';
-	import SafeMedia from '$lib/components/SafeMedia.svelte';
-	import { assetUrl } from '$lib/api';
-	import { t } from '$lib/i18n.svelte';
+  /**
+   * JobInputsDrawer — per-scene job history + read-only view of what a job
+   * sent to ComfyUI. Reads job.payload (persisted in jobs.payload_json,
+   * served via _job_public): the resolved prompt plus per-node input values.
+   * Ref assignments are labeled by matching node ids against the workflow's
+   * input_schema roles. "Copy settings to form" loads payload.input_values
+   * back into the live form via the caller-provided callback.
+   */
+  import type { Job, Workflow } from "$lib/api";
+  import Button from "$lib/components/ui/Button.svelte";
+  import Icon from "$lib/components/ui/Icon.svelte";
+  import Modal from "$lib/components/ui/Modal.svelte";
+  import SafeMedia from "$lib/components/SafeMedia.svelte";
+  import { normalizeInputRole } from "$lib/comfy/parser";
+  import type { ComfyInputKind } from "$lib/comfy/types";
+  import { assetUrl } from "$lib/api";
+  import { t } from "$lib/i18n.svelte";
 
-	interface Props {
-		open?: boolean;
-		/** Latest job for the scene — shown by default. */
-		job?: Job | null;
-		/** Full job list for the scene, newest first (drives history). */
-		jobs?: Job[];
-		workflow?: Workflow | null;
-		/** Load a job's input_values back into the video form. */
-		onCopySettings?: (values: Record<string, string | number>) => void;
-		/** The scene's current video_path — marks which render is live. */
-		sceneVideoPath?: string | null;
-		/** Make this job's output the scene's current clip. */
-		onApplyToScene?: (job: Job, path: string) => void;
-		/** True while the apply request is in flight. */
-		applying?: boolean;
-		onclose?: () => void;
-	}
+  interface Props {
+    open?: boolean;
+    /** Latest job for the scene — shown by default. */
+    job?: Job | null;
+    /** Full job list for the scene, newest first (drives history). */
+    jobs?: Job[];
+    workflow?: Workflow | null;
+    workflows?: Workflow[];
+    /** Load a job's input_values back into the video form. */
+    onCopySettings?: (values: Record<string, string | number>) => void;
+    /** The scene's current video_path — marks which render is live. */
+    sceneVideoPath?: string | null;
+    /** Make this job's output the scene's current clip. */
+    onApplyToScene?: (job: Job, path: string) => void;
+    /** True while the apply request is in flight. */
+    applying?: boolean;
+    onclose?: () => void;
+  }
 
-	let {
-		open = $bindable(false),
-		job = null,
-		jobs = [],
-		workflow = null,
-		onCopySettings,
-		sceneVideoPath = null,
-		onApplyToScene,
-		applying = false,
-		onclose,
-	}: Props = $props();
+  let {
+    open = $bindable(false),
+    job = null,
+    jobs = [],
+    workflow = null,
+    workflows = [],
+    onCopySettings,
+    sceneVideoPath = null,
+    onApplyToScene,
+    applying = false,
+    onclose,
+  }: Props = $props();
 
-	let selectedJobId = $state<number | null>(null);
-	let copied = $state(false);
+  let selectedJobId = $state<number | null>(null);
+  let copied = $state(false);
 
-	const historyJobs = $derived.by(() => {
-		const list = (jobs ?? []).filter((j) => j.kind === 'video' && j.payload != null);
-		return [...list].sort((a, b) => b.id - a.id).slice(0, 20);
-	});
+  const historyJobs = $derived.by(() => {
+    const list = (jobs ?? []).filter(
+      (j) => j.kind === "video" && j.payload != null,
+    );
+    return [...list].sort((a, b) => b.id - a.id).slice(0, 20);
+  });
 
-	const activeJob = $derived(
-		historyJobs.find((j) => j.id === selectedJobId) ?? job ?? historyJobs[0] ?? null,
-	);
+  const activeJob = $derived(
+    historyJobs.find((j) => j.id === selectedJobId) ??
+      job ??
+      historyJobs[0] ??
+      null,
+  );
+  const activeWorkflow = $derived(
+    workflows.find((w) => w.id === activeJob?.workflow_id) ?? workflow,
+  );
 
-	$effect(() => {
-		if (open && selectedJobId == null && activeJob) {
-			selectedJobId = activeJob.id;
-		}
-	});
+  $effect(() => {
+    if (open && selectedJobId == null && activeJob) {
+      selectedJobId = activeJob.id;
+    }
+  });
 
-	const prompt = $derived(
-		typeof activeJob?.payload?.prompt === 'string' && activeJob.payload.prompt.trim()
-			? (activeJob.payload.prompt as string)
-			: null,
-	);
+  const prompt = $derived(
+    typeof activeJob?.payload?.prompt === "string" &&
+      activeJob.payload.prompt.trim()
+      ? (activeJob.payload.prompt as string)
+      : null,
+  );
 
-	interface ValueRow {
-		nodeId: string;
-		label: string;
-		role: string;
-		value: string;
-	}
+  interface ValueRow {
+    nodeId: string;
+    label: string;
+    role: string;
+    kind: ComfyInputKind | null;
+    value: string;
+  }
 
-	const valueRows = $derived.by((): ValueRow[] => {
-		const raw = activeJob?.payload?.input_values;
-		if (!raw || typeof raw !== 'object') return [];
-		const schema = workflow?.input_schema ?? [];
-		return Object.entries(raw as Record<string, unknown>)
-			.filter(([, v]) => v !== null && v !== undefined && String(v) !== '')
-			.map(([nodeId, v]) => {
-				const inp = schema.find((i) => i.nodeId === nodeId);
-				return {
-					nodeId,
-					label: inp?.label ?? nodeId,
-					role: inp?.role ?? '',
-					value: String(v),
-				};
-			});
-	});
+  const valueRows = $derived.by((): ValueRow[] => {
+    const raw = activeJob?.payload?.input_values;
+    if (!raw || typeof raw !== "object") return [];
+    const schema = activeWorkflow?.input_schema ?? [];
+    return Object.entries(raw as Record<string, unknown>)
+      .filter(([, v]) => v !== null && v !== undefined && String(v) !== "")
+      .map(([nodeId, v]) => {
+        const inp = schema.find((i) => i.nodeId === nodeId);
+        return {
+          nodeId,
+          label: inp?.label ?? nodeId,
+          role: normalizeInputRole(inp?.role ?? null) ?? "",
+          kind: inp?.kind ?? null,
+          value: String(v),
+        };
+      });
+  });
 
-const refRows = $derived(valueRows.filter((r) => ['character', 'location', 'image', 'video', 'audio'].includes(r.role)));
-const otherRows = $derived(valueRows.filter((r) => !['character', 'location', 'image', 'video', 'audio'].includes(r.role)));
+  function isImageRef(row: ValueRow): boolean {
+    return (
+      ["character", "location", "image"].includes(row.role) ||
+      row.kind === "image" ||
+      row.kind === "image_url"
+    );
+  }
+  function isReference(row: ValueRow): boolean {
+    return (
+      isImageRef(row) ||
+      ["video", "audio"].includes(row.role) ||
+      row.kind === "video" ||
+      row.kind === "audio"
+    );
+  }
+  const refRows = $derived(valueRows.filter(isReference));
+  const otherRows = $derived(valueRows.filter((r) => !isReference(r)));
 
-/** First mp4/webm/mov output of the active job — the clip preview + apply source. */
-const outputVideo = $derived.by(() => {
-	const paths = (activeJob?.output_paths ?? []).filter(
-		(p) => !/\.(png|jpe?g|webp|gif|bmp)$/i.test(p),
-	);
-	return paths[0] ?? null;
-});
+  function referenceUrl(value: string): string | null {
+    return /^https?:\/\//i.test(value) ? value : assetUrl(value);
+  }
 
-const outputVideoUrl = $derived(assetUrl(outputVideo));
+  /** First mp4/webm/mov output of the active job — the clip preview + apply source. */
+  const outputVideo = $derived.by(() => {
+    const paths = (activeJob?.output_paths ?? []).filter(
+      (p) => !/\.(png|jpe?g|webp|gif|bmp)$/i.test(p),
+    );
+    return paths[0] ?? null;
+  });
 
-/** This job's output is already the clip on the scene. */
-const isActiveClip = $derived(Boolean(outputVideo && outputVideo === sceneVideoPath));
+  const outputVideoUrl = $derived(assetUrl(outputVideo));
 
-function applyToScene() {
-	if (!onApplyToScene || !activeJob || !outputVideo) return;
-	onApplyToScene(activeJob, outputVideo);
-}
+  /** This job's output is already the clip on the scene. */
+  const isActiveClip = $derived(
+    Boolean(outputVideo && outputVideo === sceneVideoPath),
+  );
 
-	function roleLabel(role: string): string {
-		switch (role) {
-			case 'character':
-				return t('jobDrawer.characterRef');
-			case 'location':
-				return t('jobDrawer.locationRef');
-			case 'image':
-				return t('jobDrawer.refImage');
-			case 'video':
-				return t('jobDrawer.videoInput');
-			case 'audio':
-				return t('jobDrawer.audioInput');
-			default:
-				return role;
-		}
-	}
+  function applyToScene() {
+    if (!onApplyToScene || !activeJob || !outputVideo) return;
+    onApplyToScene(activeJob, outputVideo);
+  }
 
-	function baseName(path: string): string {
-		const parts = path.replace(/\\/g, '/').split('/');
-		return parts[parts.length - 1] || path;
-	}
+  function roleLabel(role: string): string {
+    switch (role) {
+      case "character":
+        return t("jobDrawer.characterRef");
+      case "location":
+        return t("jobDrawer.locationRef");
+      case "image":
+        return t("jobDrawer.refImage");
+      case "video":
+        return t("jobDrawer.videoInput");
+      case "audio":
+        return t("jobDrawer.audioInput");
+      default:
+        return role;
+    }
+  }
 
-	function copySettings() {
-		if (!onCopySettings || !activeJob) return;
-		const raw = activeJob.payload?.input_values;
-		if (!raw || typeof raw !== 'object') return;
-		const values: Record<string, string | number> = {};
-		for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-			if (typeof v === 'string' || typeof v === 'number') values[k] = v;
-		}
-		onCopySettings(values);
-		open = false;
-	}
+  function baseName(path: string): string {
+    const parts = path.replace(/\\/g, "/").split("/");
+    return parts[parts.length - 1] || path;
+  }
 
-	function statusChipClass(status: string): string {
-		if (status === 'done') return 'chip-done';
-		if (status === 'failed') return 'chip-failed';
-		if (status === 'running') return 'chip-running';
-		return 'chip-pending';
-	}
+  function copySettings() {
+    if (!onCopySettings || !activeJob) return;
+    const raw = activeJob.payload?.input_values;
+    if (!raw || typeof raw !== "object") return;
+    const values: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === "string" || typeof v === "number") values[k] = v;
+    }
+    onCopySettings(values);
+    open = false;
+  }
 
-	function shortTime(iso: string): string {
-		const d = new Date(iso);
-		if (Number.isNaN(d.getTime())) return '';
-		return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-	}
+  function statusChipClass(status: string): string {
+    if (status === "done") return "chip-done";
+    if (status === "failed") return "chip-failed";
+    if (status === "running") return "chip-running";
+    return "chip-pending";
+  }
 
-	async function copyPrompt() {
-		if (!prompt) return;
-		try {
-			await navigator.clipboard.writeText(prompt);
-			copied = true;
-			setTimeout(() => (copied = false), 1600);
-		} catch {
-			/* clipboard unavailable — no-op */
-		}
-	}
+  function shortTime(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  async function copyPrompt() {
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      copied = true;
+      setTimeout(() => (copied = false), 1600);
+    } catch {
+      /* clipboard unavailable — no-op */
+    }
+  }
 </script>
 
-<Modal bind:open {onclose} title={t('jobDrawer.title')} size="lg">
-	{#if !activeJob}
-		<p class="muted">{t('jobDrawer.noJobs')}</p>
-	{:else}
-		{#if historyJobs.length > 1}
-			<div class="history-strip" role="tablist" aria-label={t('jobDrawer.historyAria')}>
-				{#each historyJobs as j (j.id)}
-					<button
-						type="button"
-						class="history-chip {j.id === activeJob.id ? 'active' : ''}"
-						role="tab"
-						aria-selected={j.id === activeJob.id}
-						onclick={() => (selectedJobId = j.id)}
-					>
-						<span class="chip-dot {statusChipClass(j.status)}"></span>
-						<span>#{j.id}</span>
-						<span class="chip-time">{j.completed_at ? shortTime(j.completed_at) : j.status}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
+<Modal bind:open {onclose} title={t("jobDrawer.title")} size="lg">
+  {#if !activeJob}
+    <p class="muted">{t("jobDrawer.noJobs")}</p>
+  {:else}
+    {#if historyJobs.length > 1}
+      <div
+        class="history-strip"
+        role="tablist"
+        aria-label={t("jobDrawer.historyAria")}
+      >
+        {#each historyJobs as j (j.id)}
+          <button
+            type="button"
+            class="history-chip {j.id === activeJob.id ? 'active' : ''}"
+            role="tab"
+            aria-selected={j.id === activeJob.id}
+            onclick={() => (selectedJobId = j.id)}
+          >
+            <span class="chip-dot {statusChipClass(j.status)}"></span>
+            <span>#{j.id}</span>
+            <span class="chip-time"
+              >{j.completed_at ? shortTime(j.completed_at) : j.status}</span
+            >
+          </button>
+        {/each}
+      </div>
+    {/if}
 
-		{#if outputVideoUrl}
-			<section class="block">
-				<div class="block-head">
-					<h3 class="block-title">{t('jobDrawer.output')}</h3>
-					{#if onApplyToScene && activeJob.status === 'done'}
-						{#if isActiveClip}
-							<span class="applied-tag"><Icon name="check" size={14} /> {t('jobDrawer.currentClip')}</span>
-						{:else}
-							<Button size="sm" onclick={applyToScene} disabled={applying}>
-								<Icon name="film" size={14} /> {applying ? t('jobDrawer.applying') : t('jobDrawer.applyToScene')}
-							</Button>
-						{/if}
-					{/if}
-				</div>
-				<!-- svelte-ignore a11y_media_has_caption -->
-				<video class="output-video" src={outputVideoUrl} controls preload="metadata"></video>
-			</section>
-		{/if}
+    {#if outputVideoUrl}
+      <section class="block">
+        <div class="block-head">
+          <h3 class="block-title">{t("jobDrawer.output")}</h3>
+          {#if onApplyToScene && activeJob.status === "done"}
+            {#if isActiveClip}
+              <span class="applied-tag"
+                ><Icon name="check" size={14} />
+                {t("jobDrawer.currentClip")}</span
+              >
+            {:else}
+              <Button size="sm" onclick={applyToScene} disabled={applying}>
+                <Icon name="film" size={14} />
+                {applying
+                  ? t("jobDrawer.applying")
+                  : t("jobDrawer.applyToScene")}
+              </Button>
+            {/if}
+          {/if}
+        </div>
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video
+          class="output-video"
+          src={outputVideoUrl}
+          controls
+          preload="metadata"
+        ></video>
+      </section>
+    {/if}
 
-		<div class="job-head">
-			<span class="job-meta">{t('queue.jobLabel', { n: activeJob.id })}</span>
-			<span class="job-meta">·</span>
-			<span class="job-meta">{activeJob.status}</span>
-			{#if activeJob.completed_at}
-				<span class="job-meta">·</span>
-				<span class="job-meta">{new Date(activeJob.completed_at).toLocaleString()}</span>
-			{/if}
-			<span class="job-head-actions">
-				{#if onCopySettings && activeJob.payload?.input_values}
-					<Button size="sm" variant="secondary" onclick={copySettings}>
-						<Icon name="upload" size={14} /> {t('jobDrawer.copySettings')}
-					</Button>
-				{/if}
-			</span>
-		</div>
+    <div class="job-head">
+      <span class="job-meta">{t("queue.jobLabel", { n: activeJob.id })}</span>
+      <span class="job-meta">·</span>
+      <span class="job-meta">{activeJob.status}</span>
+      {#if activeJob.completed_at}
+        <span class="job-meta">·</span>
+        <span class="job-meta"
+          >{new Date(activeJob.completed_at).toLocaleString()}</span
+        >
+      {/if}
+      <span class="job-head-actions">
+        {#if onCopySettings && activeJob.payload?.input_values}
+          <Button size="sm" variant="secondary" onclick={copySettings}>
+            <Icon name="upload" size={14} />
+            {t("jobDrawer.copySettings")}
+          </Button>
+        {/if}
+      </span>
+    </div>
 
-		{#if prompt}
-			<section class="block">
-				<div class="block-head">
-					<h3 class="block-title">{t('jobDrawer.prompt')}</h3>
-					<Button size="sm" variant="ghost" onclick={copyPrompt}>
-						<Icon name={copied ? 'check' : 'link'} size={14} />
-						{copied ? t('jobDrawer.copied') : t('jobDrawer.copy')}
-					</Button>
-				</div>
-				{#if workflow?.prompt_profile === 'minimax_h3_ref'}
-					<p class="block-hint">{t('jobDrawer.h3Hint')}</p>
-				{/if}
-				<pre class="prompt-pre">{prompt}</pre>
-			</section>
-		{:else}
-			<p class="muted">{t('jobDrawer.noPrompt')}</p>
-		{/if}
+    {#if prompt}
+      <section class="block">
+        <div class="block-head">
+          <h3 class="block-title">{t("jobDrawer.prompt")}</h3>
+          <Button size="sm" variant="ghost" onclick={copyPrompt}>
+            <Icon name={copied ? "check" : "link"} size={14} />
+            {copied ? t("jobDrawer.copied") : t("jobDrawer.copy")}
+          </Button>
+        </div>
+        {#if activeWorkflow?.prompt_profile?.startsWith("minimax_h3")}
+          <p class="block-hint">{t("jobDrawer.h3Hint")}</p>
+        {/if}
+        <pre class="prompt-pre">{prompt}</pre>
+      </section>
+    {:else}
+      <p class="muted">{t("jobDrawer.noPrompt")}</p>
+    {/if}
 
-		{#if refRows.length > 0}
-			<section class="block">
-				<h3 class="block-title">{t('jobDrawer.references')}</h3>
-				<ul class="ref-list">
-					{#each refRows as row (row.nodeId)}
-						<li class="ref-item">
-							<span class="ref-role">{roleLabel(row.role)}</span>
-							<span class="ref-name" title={row.value}>{baseName(row.value)}</span>
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
+    {#if refRows.length > 0}
+      <section class="block">
+        <h3 class="block-title">{t("jobDrawer.references")}</h3>
+        <ul class="ref-list">
+          {#each refRows as row (row.nodeId)}
+            <li class="ref-item" class:has-preview={isImageRef(row)}>
+              {#if isImageRef(row)}
+                <a
+                  class="ref-preview"
+                  href={referenceUrl(row.value) ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${t("lightbox.openOriginal")} — ${baseName(row.value)}`}
+                  title={t("lightbox.openOriginal")}
+                >
+                  <SafeMedia
+                    class="ref-thumbnail"
+                    src={referenceUrl(row.value)}
+                    alt={baseName(row.value)}
+                    label={t("lightbox.imageUnavailable")}
+                  />
+                </a>
+                <div class="ref-details">
+                  <span class="ref-role"
+                    >{roleLabel(row.role) || row.label}</span
+                  >
+                  <span class="ref-name" title={row.value}
+                    >{baseName(row.value)}</span
+                  >
+                </div>
+              {:else}
+                <span class="ref-role">{roleLabel(row.role) || row.label}</span>
+                <span class="ref-name" title={row.value}
+                  >{baseName(row.value)}</span
+                >
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
 
-		{#if otherRows.length > 0}
-			<section class="block">
-				<h3 class="block-title">{t('jobDrawer.otherInputs')}</h3>
-				<ul class="ref-list">
-					{#each otherRows as row (row.nodeId)}
-						<li class="ref-item">
-							<span class="ref-role">{row.label}</span>
-							<span class="ref-name" title={row.value}>{row.value}</span>
-						</li>
-					{/each}
-				</ul>
-			</section>
-		{/if}
-	{/if}
+    {#if otherRows.length > 0}
+      <section class="block">
+        <h3 class="block-title">{t("jobDrawer.otherInputs")}</h3>
+        <ul class="ref-list">
+          {#each otherRows as row (row.nodeId)}
+            <li class="ref-item">
+              <span class="ref-role">{row.label}</span>
+              <span class="ref-name" title={row.value}>{row.value}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+  {/if}
 </Modal>
 
 <style>
-	.muted {
-		margin: 0;
-		font-size: 13px;
-		color: var(--text-secondary);
-	}
+  .muted {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
 
-	.job-head {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		margin: 0 0 14px;
-		font-family: var(--font-mono);
-		font-size: 12px;
-		color: var(--text-muted);
-	}
+  .job-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
 
-	.job-head-actions {
-		margin-left: auto;
-	}
+  .job-head-actions {
+    margin-left: auto;
+  }
 
-	.history-strip {
-		display: flex;
-		gap: 6px;
-		overflow-x: auto;
-		padding-bottom: 6px;
-		margin: 0 0 12px;
-	}
+  .history-strip {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    margin: 0 0 12px;
+  }
 
-	.history-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		flex-shrink: 0;
-		padding: 4px 10px;
-		font: inherit;
-		font-size: 12px;
-		font-family: var(--font-mono);
-		color: var(--text-secondary);
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: 9999px;
-		cursor: pointer;
-	}
+  .history-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font: inherit;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    cursor: pointer;
+  }
 
-	.history-chip:hover {
-		color: var(--text-primary);
-		border-color: var(--text-muted);
-	}
+  .history-chip:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+  }
 
-	.history-chip.active {
-		color: var(--text-primary);
-		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent);
-	}
+  .history-chip.active {
+    color: var(--text-primary);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
 
-	.chip-dot {
-		width: 7px;
-		height: 7px;
-		border-radius: 9999px;
-	}
+  .chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+  }
 
-	.chip-done {
-		background: var(--success);
-	}
+  .chip-done {
+    background: var(--success);
+  }
 
-	.chip-failed {
-		background: var(--error);
-	}
+  .chip-failed {
+    background: var(--error);
+  }
 
-	.chip-running {
-		background: var(--warning);
-	}
+  .chip-running {
+    background: var(--warning);
+  }
 
-	.chip-pending {
-		background: var(--text-muted);
-	}
+  .chip-pending {
+    background: var(--text-muted);
+  }
 
-	.chip-time {
-		color: var(--text-muted);
-	}
+  .chip-time {
+    color: var(--text-muted);
+  }
 
-	.job-meta {
-		white-space: nowrap;
-	}
+  .job-meta {
+    white-space: nowrap;
+  }
 
-	.output-video {
-		display: block;
-		width: 100%;
-		max-height: 320px;
-		background: #000;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-	}
+  .output-video {
+    display: block;
+    width: 100%;
+    max-height: 320px;
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
 
-	.applied-tag {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--success);
-	}
+  .applied-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--success);
+  }
 
-	.block {
-		margin: 0 0 16px;
-	}
+  .block {
+    margin: 0 0 16px;
+  }
 
-	.block-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		margin: 0 0 6px;
-	}
+  .block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 6px;
+  }
 
-	.block-title {
-		margin: 0;
-		font-size: 13px;
-		font-weight: 650;
-		color: var(--text-primary);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
+  .block-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
 
-	.block-hint {
-		margin: 0 0 6px;
-		font-size: 12px;
-		color: var(--text-muted);
-	}
+  .block-hint {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
 
-	.prompt-pre {
-		margin: 0;
-		padding: 12px;
-		max-height: 320px;
-		overflow-y: auto;
-		font-family: var(--font-mono);
-		font-size: 12px;
-		line-height: 1.55;
-		white-space: pre-wrap;
-		word-break: break-word;
-		color: var(--text-primary);
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-	}
+  .prompt-pre {
+    margin: 0;
+    padding: 12px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
 
-	.ref-list {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
+  .ref-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 
-	.ref-item {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 10px;
-		font-size: 13px;
-		background: var(--bg-elevated);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-	}
+  .ref-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    font-size: 13px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
 
-	.ref-role {
-		flex-shrink: 0;
-		min-width: 110px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--text-secondary);
-	}
+  .ref-role {
+    flex-shrink: 0;
+    min-width: 110px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
 
-	.ref-name {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-family: var(--font-mono);
-		font-size: 12px;
-		color: var(--text-primary);
-	}
+  .ref-item.has-preview {
+    gap: 14px;
+    padding: 10px;
+  }
+
+  .ref-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 160px;
+    height: 104px;
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .ref-preview:hover {
+    border-color: var(--accent);
+  }
+
+  .ref-preview:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .ref-preview :global(.ref-thumbnail) {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .ref-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  @media (max-width: 560px) {
+    .ref-item.has-preview {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .ref-details {
+      width: 100%;
+    }
+  }
+
+  .ref-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-primary);
+  }
 </style>

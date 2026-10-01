@@ -189,6 +189,21 @@ class QueueWorker:
                 raise RuntimeError(f"ComfyUI error: {messages}")
 
             outputs_meta = client.extract_outputs(history)
+            if kind == "enhancement":
+                # Workflows may save intermediate videos, comparisons and PNGs.
+                # Only the user's selected final video can become the enhanced version.
+                node_id = str(payload["output_node_id"])
+                selected_history = {
+                    "outputs": {node_id: (history.get("outputs") or {}).get(node_id, {})}
+                }
+                outputs_meta = [
+                    m
+                    for m in client.extract_outputs(selected_history)
+                    if _fs_path(m["filename"]).suffix.lower()
+                    in {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
+                ]
+                if not outputs_meta:
+                    raise RuntimeError("The selected enhancement output returned no video")
             dest_dir = config.settings.assets_dir / str(project_id) / kind
             dest_dir.mkdir(parents=True, exist_ok=True)
             paths: list[str] = []
@@ -293,7 +308,7 @@ class QueueWorker:
         dest_dir = config.settings.assets_dir / str(project_id) / kind
         dest_dir.mkdir(parents=True, exist_ok=True)
         label = f"job-{job['id']}-{kind}"
-        if kind == "video":
+        if kind in ("video", "enhancement"):
             path = write_placeholder_mp4(dest_dir / f"{label}.mp4", label=label)
         else:
             path = write_placeholder_png(dest_dir / f"{label}.png", label=label)
@@ -366,6 +381,7 @@ class QueueWorker:
         kind = job.get("kind") or "job"
         if kind == "export":
             return "Export film"
+        prefix = "Enhance · " if kind == "enhancement" else ""
         conn = get_db(config.settings.db_path)
         try:
             if payload.get("character_id"):
@@ -398,7 +414,7 @@ class QueueWorker:
                 ).fetchone()
                 if row:
                     heading = (row["heading"] or f"Scene {row['s_pos']}").strip()
-                    return f"#{row['s_pos']}.{row['c_pos']} · {heading}"
+                    return f"{prefix}#{row['s_pos']}.{row['c_pos']} · {heading}"
                 return f"Clip #{job['clip_id']}"
             if job.get("scene_id"):
                 row = conn.execute(
@@ -424,6 +440,16 @@ class QueueWorker:
         scene_id = job.get("scene_id")
         conn = get_db(config.settings.db_path)
         try:
+            if job["kind"] == "enhancement":
+                conn.execute(
+                    "UPDATE clips SET enhanced_path = ?, enhancement_source_path = ?, "
+                    "use_enhanced = CASE WHEN clip_path = ? THEN 1 ELSE 0 END "
+                    "WHERE id = ? AND project_id = ?",
+                    (primary, payload["source_path"], payload["source_path"],
+                     job["clip_id"], job["project_id"]),
+                )
+                conn.commit()
+                return
             if character_id:
                 target = payload.get("asset_target") or "sheet"
                 if target == "portrait":
@@ -449,7 +475,7 @@ class QueueWorker:
                 )
             if job.get("clip_id") and job["kind"] == "video":
                 conn.execute(
-                    "UPDATE clips SET clip_path = ? WHERE id = ?",
+                    "UPDATE clips SET clip_path = ?, use_enhanced = 0 WHERE id = ?",
                     (primary, job["clip_id"]),
                 )
                 # Mirror onto the scene for legacy readers (canvas scene cards,
@@ -466,7 +492,7 @@ class QueueWorker:
                 # Legacy job (pre-clips schema): write the scene's default clip.
                 conn.execute(
                     """
-                    UPDATE clips SET clip_path = ? WHERE id = (
+                    UPDATE clips SET clip_path = ?, use_enhanced = 0 WHERE id = (
                         SELECT c.id FROM clips c WHERE c.scene_id = ?
                         ORDER BY c.order_index, c.id LIMIT 1
                     )

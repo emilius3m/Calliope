@@ -18,6 +18,30 @@
 		queryFn: projects.list,
 	});
 
+	let importInput = $state<HTMLInputElement | null>(null);
+
+	const importMutation = createMutation({
+		mutationFn: (file: File) => projects.importArchive(file),
+		onSuccess: (res) => {
+			client.invalidateQueries({ queryKey: ['projects'] });
+			toast.success(t('projects.imported', { title: res.title }));
+			if (res.missing_workflows.length) {
+				toast.info(t('projects.importMissingWorkflows', { names: res.missing_workflows.join(', ') }), 8000);
+			}
+			goto(`/project/${res.project_id}`);
+		},
+		onError: (err) => {
+			toast.error(err instanceof Error ? err.message : t('projects.importFailed'));
+		},
+	});
+
+	function onImportFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (file) $importMutation.mutate(file);
+	}
+
 	const createProjectMutation = createMutation({
 		mutationFn: projects.create,
 		onSuccess: (data: Project) => {
@@ -114,6 +138,22 @@
 </script>
 
 <AppHeader active="projects">
+	<input
+		bind:this={importInput}
+		type="file"
+		accept=".zip,application/zip"
+		hidden
+		onchange={onImportFile}
+	/>
+	<Button
+		variant="secondary"
+		loading={$importMutation.isPending}
+		title={t('projects.importTitle')}
+		onclick={() => importInput?.click()}
+	>
+		<Icon name="upload" size={15} />
+		{t('projects.import')}
+	</Button>
 	<Button variant="primary" onclick={openForm}>
 		<Icon name="plus" size={15} />
 		{t('projects.new')}

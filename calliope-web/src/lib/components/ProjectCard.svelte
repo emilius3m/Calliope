@@ -124,6 +124,18 @@
 	}
 
 	let deleteOpen = $state(false);
+	let exportOpen = $state(false);
+
+	function downloadArchive(includeVideos: boolean) {
+		exportOpen = false;
+		const a = document.createElement('a');
+		a.href = projects.exportUrl(project.id, includeVideos);
+		a.download = '';
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		toast.info(t('projectCard.exportStarted'));
+	}
 
 	const deleteMutation = createMutation({
 		mutationFn: () => projects.delete(project.id),
@@ -221,6 +233,18 @@
 				<button
 					type="button"
 					role="menuitem"
+					class="menu-item"
+					onclick={() => {
+						menuOpen = false;
+						exportOpen = true;
+					}}
+				>
+					<Icon name="download" size={14} />
+					{t('projectCard.export')}
+				</button>
+				<button
+					type="button"
+					role="menuitem"
 					class="menu-item danger"
 					onclick={() => {
 						menuOpen = false;
@@ -259,6 +283,19 @@
 	{/snippet}
 </Modal>
 
+<Modal bind:open={exportOpen} title={t('projectCard.exportTitle', { title: project.title })}>
+	<p class="export-note">{t('projectCard.exportMessage')}</p>
+	{#snippet footer()}
+		<Button variant="ghost" onclick={() => (exportOpen = false)}>{t('common.cancel')}</Button>
+		<Button variant="secondary" onclick={() => downloadArchive(false)}>
+			{t('projectCard.exportWithoutVideos')}
+		</Button>
+		<Button variant="primary" onclick={() => downloadArchive(true)}>
+			{t('projectCard.exportWithVideos')}
+		</Button>
+	{/snippet}
+</Modal>
+
 <ConfirmDialog
 	bind:open={deleteOpen}
 	title={t('projectCard.deleteTitle')}
@@ -269,6 +306,11 @@
 />
 
 <style>
+	.export-note {
+		margin: 0;
+		color: var(--text-secondary);
+		line-height: 1.5;
+	}
 	.project-card {
 		position: relative;
 		background: var(--bg-surface);

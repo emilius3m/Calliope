@@ -853,6 +853,8 @@ _PATH_REFERENCE_QUERIES = [
     ("scenes", "video_path"),
     ("scenes", "env_image_path"),
     ("clips", "clip_path"),
+    ("clips", "enhanced_path"),
+    ("clips", "enhancement_source_path"),
     ("shot_capture", "file_path"),
 ]
 

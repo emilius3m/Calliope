@@ -58,6 +58,8 @@ import { t } from '$lib/i18n.svelte';
 	clipJobs?: Job[];
 		workflow: Workflow | undefined;
 		workflows: Workflow[];
+		/** Registry also includes disabled workflows used by older renders. */
+		historyWorkflows?: Workflow[];
 		formValues: Record<string, string | number>;
 		assetOptions: AssetOption[];
 		allowUpload?: boolean;
@@ -101,6 +103,7 @@ import { t } from '$lib/i18n.svelte';
 		clipJobs = [],
 		workflow,
 		workflows,
+		historyWorkflows = [],
 		formValues = $bindable(),
 		assetOptions,
 		allowUpload = true,
@@ -230,6 +233,7 @@ import { t } from '$lib/i18n.svelte';
 				{job}
 				jobs={clipJobs}
 				{workflow}
+				workflows={historyWorkflows.length ? historyWorkflows : workflows}
 				sceneVideoPath={selectedClip?.clip.clip_path ?? selected.video_path}
 				onCopySettings={(values) => {
 					formValues = { ...formValues, ...values };

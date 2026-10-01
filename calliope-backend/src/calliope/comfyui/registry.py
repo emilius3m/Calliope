@@ -10,6 +10,8 @@ PatchField = Literal["image", "url", "audio", "video", "file", "text", "value", 
 TEXT_AREA_CLASSES = frozenset(
     {
         "CLIPTextEncode",
+        "WanVideoTextEncode",
+        "WanVideoTextEncodeSingle",
         "Note",
         "ShowText",
         "ImpactWildcardProcessor",

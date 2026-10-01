@@ -78,6 +78,7 @@ The app walks a project through four stages — **Story, Assets, Script, Video**
 - **Assets:** each character, location, and item has its own **Image prompt**. Pick a workflow and shared settings (width/height/etc.) at the top, then click Generate per entity to produce reference images on your ComfyUI. Regenerate any single entity without touching the others.
 - **Script:** **Regenerate Script** also opens a project-linked Agents chat (pre-filled) to rewrite the per-scene script. Scenes preserve the full screenplay: complete action prose and verbatim dialogue. Then **Break into shots** splits a scene into its shot clips — an LLM coverage pass allocates every dialogue line and action beat across clips of ~5–10 seconds (a 2-minute dialogue scene becomes a dozen clips, not one). Scenes link back to the characters and locations from the Story stage.
 - **Video:** each clip gets rendered by a **Generate** pass that queues a job on ComfyUI with the right prompt and reference images (plus optional video/audio file refs). Clips marked **Continue from previous clip** extend the previous clip instead of cutting fresh — see [Continue from previous clip (video extend)](#continue-from-previous-clip-video-extend).
+- **Enhance view:** after generation, open **Video → Enhance** to restore or upscale **one clip or all rendered clips** with a separate ComfyUI workflow. The original clip is supplied automatically; generation prompts, workflows and settings stay saved. Compare the original and enhanced videos, then choose which version to use in the film.
 - **Film view:** once clips are rendered, **Export film** stitches them with ffmpeg: clips are normalized to 1080p at the **majority frame rate of the clips themselves** (24 fps clips export at 24 fps; mixed-rate projects conform to whichever rate most clips use), joined with 0.5s crossfades, and loudness-normalized into one final file.
 - When everything is done the project is automatically marked **Completed**.
 
@@ -86,6 +87,18 @@ The app walks a project through four stages — **Story, Assets, Script, Video**
 **Build Scene** is a browser-based shot composer for blocking out cinematic shots before generating AI images or video. One composition model (`scene_json`) drives both preview and export, and the **Three.js viewport is the single surface**: it previews the scene, captures stills, and exports video (one deterministic `MediaRecorder` pass of the object keyframes + camera track, then normalized server-side to **H.264 MP4 via ffmpeg** so the Playground "From Build Scene" picker always receives a real MP4). **Camera framing is the user's job** — keyed from the timeline — while the agent animates objects through the `shot_*` keyframe tools. There are **no camera-beat tools** and **no ComfyUI** in this surface; agent gates (**Brief** before mutate, **Cut** before export) keep the agent honest. Scenes are managed like AI Canvas chats: a left rail holds compositions bound to agent sessions, and the agent panel drives the same scene through built-in `shot_*` tools (no MCP).
 
 **Agents** is a chat-driven way to run the same pipeline: talk to a production agent that operates Calliope through tools (create project, draft story, write script, queue asset/video renders, watch jobs). Every chat session is bound to at most one project — start a **Sandbox** chat with no project and the agent materializes one via `create_project`, linking the session automatically; or link a session to an existing project and ask for edits. Complex builds are decomposed by a planner into sub-agents (story → script → assets → video). Everything the agent does goes through the same database and render queue the project UI reads — nothing bypasses the normal pipeline. When the agent waits on renders (`wait_for_jobs`), it uses the same **Poll timeout** as the queue worker (default 30 minutes).
+
+### Drive Calliope from Claude Code (MCP)
+
+The backend is also an **MCP server** at `http://127.0.0.1:8247/mcp` (streamable HTTP), so Claude Code — or any MCP client — can run the whole pipeline with the same tools the in-app agent uses: create/select a project, write the story (beats, characters, locations, items), the script (scenes, clips, `break_into_shots`), queue reference images and video clips, and watch jobs. Tools run **inside the backend**, so every change shows up live in the web app.
+
+```bash
+claude mcp add --transport http calliope http://127.0.0.1:8247/mcp
+```
+
+Opening Claude Code in this folder also picks up the bundled `.mcp.json`. Start with `list_projects` → `select_project` (or `create_project`, which selects the new project); the selection is kept on a **Claude Code (MCP)** session. Rendering tools (`enqueue_asset_jobs`, `enqueue_video_jobs`, `run_workflow`) and deletions are flagged destructive, so Claude Code asks before running them — that prompt replaces the chat-based render approval. Build Scene, AI Canvas, `ask_user` and `run_command` stay in the app. The endpoint only answers `localhost` / `127.0.0.1` hosts.
+
+**Who writes the content.** Settings → Agent → **MCP content source** (default **MCP client**): for MCP calls Calliope's own LLM is never used — the client writes the story, script, shots, continuity plan and video prompts. `generate_story`, `generate_script`, `break_into_shots` and `set_continuity_plan` called *without* `content` / `plan` return a **brief** (the exact instructions and context Calliope's LLM would get); called *with* it, they validate and save through the same code paths, and nothing is deleted until the content passes. Video: `get_prompt_brief` → write each H3 prompt → `set_clip_prompts` (format-checked, saved as the clip's draft shown in *Review prompt*) → `enqueue_video_jobs`, which refuses clips without a current prompt. A continuity plan written by the client is kept across renders. Switch the setting to **Calliope's LLM** to have the same tools generate as before; the in-app agent and UI buttons always use Calliope's LLM.
 
 ## ComfyUI workflows (important)
 
@@ -184,6 +197,18 @@ Your video-stage setup (workflow choice, input values, clip source) auto-saves a
 ### Better ComfyUI errors
 
 When ComfyUI rejects a workflow, the job error now names the actual cause and node — e.g. `ComfyUI rejected the workflow (400): prompt_outputs_failed_validation; node 12: Invalid audio file: "voice.m4a"` — instead of a bare status code. Audio reference inputs upload to ComfyUI's flat input directory and work with both stock `LoadAudio` and VHS's `VHS_LoadAudio`.
+
+### Enhance generated clips
+
+1. Generate the clips as usual, then open **Video → Enhance**.
+2. Select a restoration/upscaling workflow. It must have an `(Input:video)` and an `(Output:video)` node. The selected clip's **original video** is passed in automatically; no file picking or changes to the generation workflow are needed.
+3. If the workflow saves several videos, select the desired **Result to keep**. For the supplied Wan workflow, choose **Restored & Upscaled Video** for the final output or **Enhanced Video** for the intermediate result.
+4. Click **Enhance clip**, or **Enhance all** to apply the displayed enhancement settings to every rendered clip in timeline order. Missing originals and clips already being processed are skipped. Progress, cancellation and retries use the normal render queue.
+5. Compare both previews and choose **Original** or **Enhanced** under **Version for the film**, or use the version selector on each clip in **Film**. A completed enhancement is selected automatically. Export the film after processing finishes; changing a selected version marks a previous export as out of date.
+
+Enhancement settings are saved independently per clip. Regenerating an original makes its earlier enhancement out of date and switches that clip back to the new original. Project archives with videos preserve both versions and the film selection.
+
+`example_ComfyUI_workflows/Wan21_Restore_Enhance_Upscale_API.json` is the tagged API version of the supplied visual Wan workflow. It requires WanVideoWrapper, VideoHelperSuite, KJNodes, Frame Interpolation, the listed LoRAs, RealESRGAN and RIFE models. In particular, `Wan2_1-T2V-14B_fp8_e4m3fn.safetensors` must be visible under ComfyUI's diffusion models and `Wan2_1_VAE_bf16.safetensors` under its VAEs. This preset resamples input to 24 fps, crops to 960×720, and produces a final 2880×2160 video at 48 fps. Edit the workflow's dimensions/framing in ComfyUI for a different aspect ratio. Film export still normalizes the selected clips to 1080p.
 
 ### 3. Export the workflow
 

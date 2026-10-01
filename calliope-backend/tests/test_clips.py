@@ -101,6 +101,32 @@ def test_scene_update_ensures_default_clip(client):
     assert len(r.json()["clips"]) == 1
 
 
+def test_scene_duration_change_carries_to_single_clip(client):
+    pid = _mk_project(client)
+    scene = _add_scene(client, pid, 1, duration_sec=7)
+    r = client.patch(f"/api/projects/{pid}/scenes/{scene['id']}", json={"duration_sec": 13})
+    assert r.status_code == 200
+    assert [c["duration_sec"] for c in r.json()["clips"]] == [13]
+
+
+def test_scene_duration_change_rescales_several_clips(client):
+    pid = _mk_project(client)
+    scene = _add_scene(client, pid, 1, duration_sec=13)
+    sid = scene["id"]
+    clip1 = scene["clips"][0]["id"]
+    client.patch(f"/api/projects/{pid}/clips/{clip1}", json={"duration_sec": 6})
+    client.post(f"/api/projects/{pid}/scenes/{sid}/clips", json={"description": "b", "duration_sec": 7})
+
+    r = client.patch(f"/api/projects/{pid}/scenes/{sid}", json={"duration_sec": 20})
+    durations = [c["duration_sec"] for c in r.json()["clips"]]
+    assert sum(durations) == 20 and durations[0] < durations[1]
+
+    # unrelated edits leave hand-tuned clip lengths alone
+    client.patch(f"/api/projects/{pid}/clips/{clip1}", json={"duration_sec": 4})
+    r = client.patch(f"/api/projects/{pid}/scenes/{sid}", json={"heading": "NEW", "duration_sec": 20})
+    assert r.json()["clips"][0]["duration_sec"] == 4
+
+
 def test_delete_last_clip_of_scene_rejected(client):
     pid = _mk_project(client)
     scene = _add_scene(client, pid, 1)

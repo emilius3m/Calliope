@@ -18,6 +18,7 @@ from typing import Any
 from calliope import config
 from calliope.comfyui.dry_run import write_placeholder_mp4
 from calliope.db import get_db, row_to_dict
+from calliope.enhancement import film_clip_path
 
 logger = logging.getLogger("calliope.export")
 
@@ -104,6 +105,8 @@ def collect_clips(project_id: int) -> tuple[list[dict[str, Any]], list[dict[str,
             (project_id,),
         ).fetchall()
         clips = [dict(r) for r in rows]
+        for clip in clips:
+            clip["clip_path"] = film_clip_path(clip)
     finally:
         conn.close()
     with_clip = [c for c in clips if c.get("clip_path")]
@@ -255,6 +258,15 @@ async def run_export(
     clips, skipped = collect_clips(project_id)
     if not clips:
         raise RuntimeError("No scene clips to export — generate videos first")
+    # Record what actually enters ffmpeg, including version choices and order.
+    # The UI can then flag a film as stale even after switching back to originals.
+    payload["clip_sources"] = [{"clip_id": c["id"], "path": c["clip_path"]} for c in clips]
+    conn = get_db(config.settings.db_path)
+    try:
+        conn.execute("UPDATE jobs SET payload_json = ? WHERE id = ?", (json.dumps(payload), job_id))
+        conn.commit()
+    finally:
+        conn.close()
 
     for clip in skipped:
         heading = (

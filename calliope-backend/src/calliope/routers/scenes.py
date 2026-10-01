@@ -8,7 +8,15 @@ from fastapi import APIRouter, HTTPException
 from calliope.agent.coverage_agent import expand_scene_coverage
 from calliope.agent.script_agent import generate_script
 from calliope.config import settings
-from calliope.db import ensure_default_clip, get_db, row_to_dict
+from calliope.db import (
+    ensure_default_clip,
+    get_db,
+    row_to_dict,
+    scene_items,
+    set_scene_items,
+    sync_clip_durations,
+)
+from calliope.enhancement import enhancement_current, film_clip_path
 from calliope.models.schemas import (
     ClipCreate,
     ClipReorder,
@@ -25,6 +33,14 @@ router = APIRouter()
 
 def _clip_public(clip_row) -> dict[str, Any]:
     clip = row_to_dict(clip_row)
+    try:
+        clip["enhancement_settings"] = json.loads(
+            clip.pop("enhancement_settings_json", None) or "{}"
+        )
+    except (json.JSONDecodeError, TypeError):
+        clip["enhancement_settings"] = {}
+    clip["enhancement_current"] = enhancement_current(clip)
+    clip["film_path"] = film_clip_path(clip)
     raw_settings = clip.pop("video_settings_json", None)
     if raw_settings:
         try:
@@ -65,6 +81,11 @@ def _scene_with_chars(conn, scene_row, *, with_clips: bool = True) -> dict[str, 
     ).fetchall()
     scene["characters"] = [row_to_dict(c) for c in chars]
     scene["character_ids"] = [c["id"] for c in scene["characters"]]
+    scene["items"] = [
+        {k: i[k] for k in ("id", "name", "reference_image_path")}
+        for i in scene_items(conn, scene["id"])
+    ]
+    scene["item_ids"] = [i["id"] for i in scene["items"]]
     raw_settings = scene.pop("video_settings_json", None)
     if raw_settings:
         try:
@@ -205,6 +226,8 @@ async def create_scene(project_id: int, payload: SceneCreate) -> dict[str, Any]:
                 "INSERT OR IGNORE INTO scene_characters (scene_id, character_id) VALUES (?, ?)",
                 (scene_id, cid),
             )
+        if payload.item_ids:
+            set_scene_items(conn, scene_id, project_id, payload.item_ids)
         _ensure_default_clip(conn, scene_id, project_id)
         conn.commit()
         row = conn.execute("SELECT * FROM scenes WHERE id = ?", (scene_id,)).fetchone()
@@ -225,6 +248,7 @@ async def update_scene(project_id: int, scene_id: int, payload: SceneUpdate) -> 
             raise HTTPException(status_code=404, detail="Scene not found")
         data = payload.model_dump(exclude_unset=True)
         char_ids = data.pop("character_ids", None)
+        item_ids = data.pop("item_ids", None)
         # video_settings arrives as a dict — the generic UPDATE path below only
         # handles scalars, so serialize it into its JSON column (or NULL it).
         video_settings = data.pop("video_settings", None)
@@ -248,7 +272,12 @@ async def update_scene(project_id: int, scene_id: int, payload: SceneUpdate) -> 
                     "INSERT OR IGNORE INTO scene_characters (scene_id, character_id) VALUES (?, ?)",
                     (scene_id, cid),
                 )
+        if item_ids is not None:
+            set_scene_items(conn, scene_id, project_id, item_ids)
         _ensure_default_clip(conn, scene_id, project_id)
+        # The Video page renders clips, not the scene: keep them in step.
+        if "duration_sec" in data and data["duration_sec"] != existing["duration_sec"]:
+            sync_clip_durations(conn, scene_id, data["duration_sec"])
         conn.commit()
         row = conn.execute("SELECT * FROM scenes WHERE id = ?", (scene_id,)).fetchone()
         return _scene_with_chars(conn, row)
@@ -344,19 +373,27 @@ async def update_clip(project_id: int, clip_id: int, payload: ClipUpdate) -> dic
     conn = get_db(settings.db_path)
     try:
         existing = conn.execute(
-            "SELECT id FROM clips WHERE id = ? AND project_id = ?",
+            "SELECT * FROM clips WHERE id = ? AND project_id = ?",
             (clip_id, project_id),
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Clip not found")
         data = payload.model_dump(exclude_unset=True)
         video_settings = data.pop("video_settings", None)
+        enhancement_settings = data.pop("enhancement_settings", None)
         covered = data.pop("dialog_lines_covered", None)
         data = {k: v for k, v in data.items() if v is not None}
         if covered is not None:
             data["dialog_lines_covered"] = json.dumps(covered) if covered else None
         if video_settings is not None:
             data["video_settings_json"] = json.dumps(video_settings)
+        if enhancement_settings is not None:
+            data["enhancement_settings_json"] = json.dumps(enhancement_settings)
+        if data.get("clip_path") and data["clip_path"] != existing["clip_path"]:
+            data["use_enhanced"] = 0
+        elif data.get("use_enhanced"):
+            if not enhancement_current(dict(existing)):
+                raise HTTPException(status_code=400, detail="Enhance the current original first")
         fields = [f"{k} = :{k}" for k in data]
         params: dict[str, Any] = {"id": clip_id, **data}
         if fields:

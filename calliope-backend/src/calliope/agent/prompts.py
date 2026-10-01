@@ -420,6 +420,7 @@ def build_script_chunk_messages(
     chunk_start: int,
     chunk_scenes: int,
     previous_tail: list[dict[str, Any]] | None = None,
+    items: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
     """Prompt for ONE chunk of a longer script (scenes `chunk_start`..
     `chunk_start + chunk_scenes - 1`), so a 20+ scene board is written in
@@ -441,6 +442,17 @@ def build_script_chunk_messages(
     beat_lines = "\n".join(
         f"- {b.get('order_index')}. {b.get('title')}: {b.get('description')}" for b in beats
     )
+    # Items (props) only enter the prompt when the story has some, so boards
+    # without items keep the exact prompt they always had.
+    item_block, item_field, item_ids_rule = "", "", "character_ids and location_ids"
+    if items:
+        item_block = (
+            "\n\nItems (props — list a scene's item_ids when that object is visible on "
+            "screen; their reference images keep it identical from shot to shot):\n"
+            + "\n".join(f"- id={i['id']} {i['name']}: {i.get('description') or ''}" for i in items)
+        )
+        item_field = ',\n      "item_ids": [1]'
+        item_ids_rule = "character_ids, location_ids and item_ids"
     last = chunk_start + chunk_scenes - 1
     tail_block = ""
     if previous_tail:
@@ -473,7 +485,7 @@ Characters:
 {char_lines or '(none)'}
 
 Locations:
-{loc_lines or '(none)'}{tail_block}
+{loc_lines or '(none)'}{item_block}{tail_block}
 
 === HARD CONSTRAINTS (non-negotiable) ===
 1. The JSON field "scenes" MUST contain EXACTLY {chunk_scenes} objects.
@@ -524,12 +536,12 @@ Respond ONLY with JSON:
       "dialog": "MIA (whispering): line",
       "duration_sec": 8,
       "character_ids": [1],
-      "location_id": 1
+      "location_id": 1{item_field}
     }}
   ]
 }}
 
-Use only the provided character_ids and location_ids.
+Use only the provided {item_ids_rule}.
 FINAL CHECK before responding: scenes.length == {chunk_scenes}, order_index runs
 {chunk_start}..{last}, every action is a flowing prose paragraph covering the WHOLE
 on-screen action, and every dialogue line is written out verbatim in "dialog" (no
@@ -632,16 +644,70 @@ def item_image_prompt(item: dict[str, Any]) -> str:
     return item_reference_prompt(item)
 
 
-def scene_video_prompt(scene: dict[str, Any], characters: list[dict[str, Any]]) -> str:
+def video_appearance(character: dict[str, Any]) -> str:
+    """What a character looks like, for VIDEO prompts.
+
+    Deliberately NOT consistency_prompt: that is the image-generation prompt of
+    the character sheet ("clean neutral backdrop… even studio lighting…"), and
+    pasting it into a video prompt pulls the clip toward a studio backdrop
+    instead of the scene's environment.
+    """
+    return (character.get("appearance") or "").strip()
+
+
+def video_setting(location: dict[str, Any] | None) -> dict[str, str] | None:
+    """The scene's environment for VIDEO prompts ({name, description}) or None.
+
+    Uses the location's description, not its consistency_prompt (an
+    image-generation prompt that says "no people" — wrong for a clip).
+    """
+    if not location:
+        return None
+    name = (location.get("name") or "").strip()
+    description = (location.get("description") or "").strip()
+    if not name and not description:
+        return None
+    return {"name": name or "the location", "description": description}
+
+
+def _setting_sentence(setting: dict[str, str] | None) -> str:
+    if not setting:
+        return ""
+    desc = setting["description"].rstrip(".")
+    return (
+        f"The scene takes place in {setting['name']}: {desc}."
+        if desc
+        else f"The scene takes place in {setting['name']}."
+    )
+
+
+def item_prop_text(items: list[dict[str, Any]] | None) -> str:
+    """'name (description), …' for props written into a text prompt."""
+    return ", ".join(
+        f"{i.get('name')} ({(i.get('description') or '').strip().rstrip('.')})"
+        if (i.get("description") or "").strip()
+        else str(i.get("name"))
+        for i in (items or [])
+    )
+
+
+def scene_video_prompt(
+    scene: dict[str, Any],
+    characters: list[dict[str, Any]],
+    location: dict[str, Any] | None = None,
+    items: list[dict[str, Any]] | None = None,
+) -> str:
     char_bits = ", ".join(
-        f"{c.get('name')}: {c.get('consistency_prompt') or c.get('appearance') or ''}"
+        f"{c.get('name')}: {video_appearance(c)}" if video_appearance(c) else str(c.get("name"))
         for c in characters
     )
     parts = [
         scene.get("heading") or "",
+        _setting_sentence(video_setting(location)).rstrip("."),
         scene.get("action") or "",
         scene.get("dialog") or "",
         f"featuring {char_bits}" if char_bits else "",
+        f"with {item_prop_text(items)}" if items else "",
         "cinematic motion, coherent continuity",
     ]
     return ". ".join(p for p in parts if p)
@@ -702,6 +768,18 @@ MINIMAX_H3_REF_SYSTEM = (
     "user message. Form: '<Video N> is the motion reference, with <camera and action "
     "to preserve>.' Never drop a supplied video. Do not invent a <Video N> that was "
     "not supplied.\n"
+    "8. Setting: when the user message gives a Setting, the style opener and [Shot 1] must "
+    "establish that environment (space, key features, lighting, time of day) and every "
+    "later shot stays in it — whether or not the setting has its own reference image. "
+    "The overall_soundscape follows that environment.\n"
+    "9. Character reference images are turnaround sheets on neutral backdrops: take only "
+    "identity (face, hair, body, wardrobe) from them — never their backdrop, panel layout, "
+    "or studio lighting.\n"
+    "10. Characters listed without a reference image are described from their text only and "
+    "never get a <Subject N> label.\n"
+    "11. An item subject is a prop: keep the shape, colors and materials of its picture and "
+    "place it in the scene as the action says (held, worn, on a table) — never its backdrop. "
+    "Props listed without a reference image are described from their text only.\n"
     "Write everything in English except dialogue/lyrics inside <d> and visible on-screen text."
 )
 
@@ -738,12 +816,30 @@ def _video_roster_lines(videos: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _setting_block(setting: dict[str, str] | None) -> str:
+    if not setting:
+        return "(none given — infer the environment from the heading)"
+    return f"{setting['name']} — {setting['description'] or 'no description'}"
+
+
+def _cast_block(cast: list[dict[str, Any]] | None) -> str:
+    lines = [
+        f"- {c.get('name') or 'unnamed'}: {c.get('appearance') or 'no description'}"
+        for c in (cast or [])
+    ]
+    return "\n".join(lines) or "(none)"
+
+
 def build_minimax_h3_ref_messages(
     scene: dict[str, Any],
     subjects: list[dict[str, Any]],
     videos: list[dict[str, Any]] | None = None,
     media_parts: list[dict[str, Any]] | None = None,
     continuity: str | None = None,
+    *,
+    setting: dict[str, str] | None = None,
+    extra_cast: list[dict[str, Any]] | None = None,
+    props: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """LLM messages that rewrite a scene into H3's six-section ref format.
 
@@ -751,8 +847,19 @@ def build_minimax_h3_ref_messages(
     videos: ordered ``(Input:video)`` clips — index N is ``<Video N>``.
     media_parts: optional vision parts (picture labels + image_url frames)
     appended after the text so a vision model sees the actual files.
+    setting: the scene's environment, ALWAYS passed in text — the location only
+    becomes a <Subject N> when a ref slot is left for its image, and without
+    this the environment silently vanished from 1-slot workflows.
+    extra_cast: scene characters that got no ref slot (text-only).
+    props: scene items that got no ref slot (text-only).
     """
     videos = videos or []
+    props_block = ""
+    if props:
+        props_block = (
+            "\nProps present (no reference image — text only, no <Subject N> label):\n"
+            f"{_cast_block(props)}\n"
+        )
     roster = _subject_roster_lines(subjects) or (
         "(no reference images — describe subjects from the action text)"
     )
@@ -776,6 +883,9 @@ file wins. Be specific about visible clothing, armor, weapons, face, hair, and c
 Scene heading: {scene.get('heading') or '(none)'}
 Scene duration: ~{scene.get('duration_sec') or 6} seconds
 
+Setting (the environment of every shot — establish it in the style opener and [Shot 1]):
+{_setting_block(setting)}
+
 Action (what happens — not a replacement for the reference files):
 {scene.get('action') or '(none)'}
 
@@ -788,7 +898,10 @@ Referenced images (keep these exact <Subject N> indices; Picture N is image N):
 
 Referenced videos (keep these exact <Video N> labels):
 {video_roster}
-"""
+
+Other characters present (no reference image — text only, no <Subject N> label):
+{_cast_block(extra_cast)}
+{props_block}"""
     content: str | list[dict[str, Any]] = user
     if media_parts:
         content = [{"type": "text", "text": user}, *media_parts]
@@ -798,10 +911,44 @@ Referenced videos (keep these exact <Video N> labels):
     ]
 
 
+def _fallback_body(
+    scene: dict[str, Any],
+    setting: dict[str, str] | None,
+    extra_cast: list[dict[str, Any]] | None,
+    style: str,
+) -> str:
+    """Style opener + [Shot 1] for the deterministic fallbacks.
+
+    The environment leads the shot so it survives even when the LLM rewrite
+    is unavailable (the old fallback carried only the raw heading).
+    """
+    heading = (scene.get("heading") or "").strip().rstrip(".")
+    action = (scene.get("action") or "").strip()
+    cast = " ".join(
+        f"{c.get('name')}: {c['appearance'].strip().rstrip('.')}."
+        for c in (extra_cast or [])
+        if c.get("appearance")
+    )
+    shot = " ".join(
+        p for p in (f"{heading}." if heading else "", _setting_sentence(setting), cast, action) if p
+    )
+    return f"{style}\n[Shot 1] {shot}".rstrip()
+
+
+def _soundscape_fallback(setting: dict[str, str] | None) -> str:
+    if not setting:
+        return "N/A"
+    return f"Natural ambience of {setting['name']} continues throughout the clip."
+
+
 def minimax_h3_ref_fallback(
     scene: dict[str, Any],
     subjects: list[dict[str, Any]],
     videos: list[dict[str, Any]] | None = None,
+    *,
+    setting: dict[str, str] | None = None,
+    extra_cast: list[dict[str, Any]] | None = None,
+    props: list[dict[str, Any]] | None = None,
 ) -> str:
     """Deterministic six-section H3 prompt — used when the LLM rewrite fails."""
     videos = videos or []
@@ -809,7 +956,7 @@ def minimax_h3_ref_fallback(
     retention = []
     for s in subjects:
         name = s.get("name") or "unnamed"
-        desc = (s.get("appearance") or "").strip()
+        desc = (s.get("appearance") or "").strip().rstrip(".")
         if desc:
             defs.append(
                 f"<Subject {s['index']}> is the {s['kind']} \"{name}\" in "
@@ -838,26 +985,42 @@ def minimax_h3_ref_fallback(
         )
 
     heading = (scene.get("heading") or "").strip()
-    action = (scene.get("action") or "").strip()
     labels = ", ".join(f"<Subject {s['index']}>" for s in subjects)
     video_labels = ", ".join(f"<Video {v['index']}>" for v in videos)
+    where = f", set in {setting['name']}" if setting else ""
     if labels:
-        summary = f"[reference generation] {heading or 'A scene'} featuring {labels}."
+        summary = f"[reference generation] {heading or 'A scene'}{where}, featuring {labels}."
     else:
-        summary = f"[reference generation] {heading or 'A scene'}."
+        summary = f"[reference generation] {heading or 'A scene'}{where}."
     if video_labels:
         summary += f" Motion and camera follow {video_labels}."
 
-    body = (
-        "The target video is in a cinematic style consistent with the reference images, "
-        "with coherent lighting and natural motion.\n"
-        f"[Shot 1] {heading} {action}".strip()
+    body = _fallback_body(
+        scene,
+        setting,
+        [*(extra_cast or []), *(props or [])],
+        "The target video is in a cinematic live-action style with coherent lighting and "
+        "natural motion; characters keep the identity of their reference images, never "
+        "the reference-sheet backdrop.",
     )
     if video_labels:
         body += (
             f"\nThe physical performance, camera path, and timing follow {video_labels}."
         )
+    body += _dialog_lines(scene, subjects)
 
+    return (
+        "subject_definitions:\n" + ("\n".join(defs) if defs else "N/A") + "\n\n"
+        "summary:\n" + summary + "\n\n"
+        "retention_analysis:\n" + ("\n".join(retention) if retention else "N/A") + "\n\n"
+        "detailed_description:\n" + body + "\n\n"
+        "overall_soundscape:\n" + _soundscape_fallback(setting) + "\n\n"
+        "non_diegetic_music:\nN/A"
+    )
+
+
+def _dialog_lines(scene: dict[str, Any], subjects: list[dict[str, Any]]) -> str:
+    """'SPEAKER: line' rows as H3 <d> dialogue, prefixed with a newline ('' if none)."""
     # Map 'SPEAKER: line' rows onto subjects by name; assign speaker IDs in speech order.
     # An optional delivery cue — 'MIA (whispering): line' — is kept as performance direction.
     dialog_lines = []
@@ -880,14 +1043,102 @@ def minimax_h3_ref_fallback(
         subj_idx = name_to_subject.get(key)
         who = f"<Subject {subj_idx}> (S{sid})" if subj_idx else f"{base.title()} (S{sid})"
         dialog_lines.append(f"{who} says{f' {cue}' if cue else ''}, <d>[English] {line}</d>")
-    if dialog_lines:
-        body += "\n" + "\n".join(dialog_lines)
+    return ("\n" + "\n".join(dialog_lines)) if dialog_lines else ""
 
+
+# ---------------------------------------------------------------------------
+# MiniMax H3 base (text/image-to-video) prompt profile
+# ---------------------------------------------------------------------------
+# For H3 base checkpoints (MiniMaxH3ImageToVideo, no reference-image slots).
+# Condensed from MiniMax's base multi-shot guide (t2va): no subject labels,
+# three fields, the whole clip described from text — so the environment and
+# every character's look must be written out in full.
+
+MINIMAX_H3_BASE_SYSTEM = (
+    "You rewrite scene descriptions into MiniMax H3's base multi-shot video prompt format "
+    "(text-to-video). Output ONLY these three fields, in this order, each starting with its "
+    "exact lowercase name and a colon — no markdown fences, no commentary:\n"
+    "integrated_multimodal_description:\n"
+    "overall_soundscape:\n"
+    "non_diegetic_music:\n"
+    "\n"
+    "Rules:\n"
+    "1. integrated_multimodal_description: the timed shot timeline, 120–300 words. '[Shot 1]' "
+    "has no timestamp and OPENS with the overall style (e.g. 'Cinematic, live-action') and "
+    "the initial composition. Later cuts: '[Shot N] At MM:SS.mmm, the camera cuts to …' with "
+    "strictly increasing times inside the clip duration. Under ~8 seconds prefer 1–2 shots; "
+    "one dominant action per shot; cut only for new information, otherwise move the camera.\n"
+    "2. Setting: when a Setting is given, [Shot 1] establishes that environment (space, key "
+    "features, lighting, time of day) and every later shot stays in it.\n"
+    "3. There are no reference images: describe every character's visible identity (age, "
+    "hair, wardrobe) at first appearance and repeat the key anchors in every shot.\n"
+    "4. Camera motion as natural English: motion type + 'with small/large amplitude' + "
+    "'at slow/fast speed' (omit medium/normal), e.g. 'The camera pushes in with small "
+    "amplitude at slow speed'.\n"
+    "5. Dialogue: identifying phrase + stable speaker ID + delivery OUTSIDE <d>; inside <d> "
+    "only the language tag and the exact words: 'The woman with a calm voice (S1) says: "
+    "<d>[English] …</d>'. Keep the original language and wording verbatim.\n"
+    "6. overall_soundscape: 1–4 sentences of ambience and physical sounds matching the "
+    "setting, never dialogue. non_diegetic_music: audience-only score (instrumentation, "
+    "tempo, dynamics), or 'N/A'.\n"
+    "Write everything in English except dialogue inside <d> and visible on-screen text."
+)
+
+
+def build_minimax_h3_base_messages(
+    scene: dict[str, Any],
+    cast: list[dict[str, Any]],
+    *,
+    setting: dict[str, str] | None = None,
+    props: list[dict[str, Any]] | None = None,
+) -> list[dict[str, str]]:
+    """LLM messages that rewrite a scene into H3's base (t2va) format."""
+    props_block = ""
+    if props:
+        props_block = (
+            "\nProps (describe them in full — there are no reference images):\n"
+            f"{_cast_block(props)}\n"
+        )
+    user = f"""Rewrite this scene into MiniMax H3 base multi-shot format.
+
+Scene heading: {scene.get('heading') or '(none)'}
+Scene duration: ~{scene.get('duration_sec') or 6} seconds
+
+Setting (the environment of every shot — establish it in [Shot 1]):
+{_setting_block(setting)}
+
+Characters (describe their look in full — there are no reference images):
+{_cast_block(cast)}
+{props_block}
+Action (visual base for the timeline):
+{scene.get('action') or '(none)'}
+
+Dialogue (raw 'SPEAKER: line' format; optional '(delivery cue)' after the speaker):
+{scene.get('dialog') or '(none)'}
+"""
+    return [
+        {"role": "system", "content": MINIMAX_H3_BASE_SYSTEM},
+        {"role": "user", "content": user},
+    ]
+
+
+def minimax_h3_base_fallback(
+    scene: dict[str, Any],
+    cast: list[dict[str, Any]],
+    *,
+    setting: dict[str, str] | None = None,
+    props: list[dict[str, Any]] | None = None,
+) -> str:
+    """Deterministic base-format H3 prompt — used when the LLM rewrite fails."""
+    body = _fallback_body(
+        scene, setting, [*cast, *(props or [])], "Cinematic, live-action, coherent lighting and natural motion."
+    )
+    # "[Shot 1]" must open the field on the same line as the style (base format).
+    style, _, shot = body.partition("\n[Shot 1] ")
+    timeline = f"[Shot 1] {style} {shot}".strip()
+    timeline += _dialog_lines(scene, [])
     return (
-        "subject_definitions:\n" + ("\n".join(defs) if defs else "N/A") + "\n\n"
-        "summary:\n" + summary + "\n\n"
-        "retention_analysis:\n" + ("\n".join(retention) if retention else "N/A") + "\n\n"
-        "detailed_description:\n" + body + "\n\n"
-        "overall_soundscape:\nN/A\n\n"
-        "non_diegetic_music:\nN/A"
+        "integrated_multimodal_description: " + timeline.replace("\n", " ") + "\n\n"
+        "overall_soundscape: " + _soundscape_fallback(setting) + "\n\n"
+        "non_diegetic_music: N/A"
     )

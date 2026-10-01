@@ -136,6 +136,7 @@ class SceneCreate(BaseModel):
     env_image_path: str | None = None
     beat_id: int | None = None
     character_ids: list[int] = Field(default_factory=list)
+    item_ids: list[int] = Field(default_factory=list)
     location_id: int | None = None
 
 
@@ -149,6 +150,7 @@ class SceneUpdate(BaseModel):
     env_image_path: str | None = None
     beat_id: int | None = None
     character_ids: list[int] | None = None
+    item_ids: list[int] | None = None
     location_id: int | None = None
     video_path: str | None = None
     chain_from_prev: bool | None = None
@@ -182,6 +184,8 @@ class ClipUpdate(BaseModel):
     clip_path: str | None = None
     chain_from_prev: bool | None = None
     video_settings: dict[str, Any] | None = None
+    enhancement_settings: dict[str, Any] | None = None
+    use_enhanced: bool | None = None
 
 
 class ClipReorder(BaseModel):
@@ -199,14 +203,14 @@ class WorkflowCreate(BaseModel):
     kind: Literal["image", "video"] = "image"
     workflow_json: dict[str, Any]
     description: str | None = None
-    prompt_profile: Literal["prose", "minimax_h3_ref"] | None = None
+    prompt_profile: Literal["prose", "minimax_h3_ref", "minimax_h3_base"] | None = None
 
 
 class WorkflowUpdate(BaseModel):
     name: str | None = None
     kind: Literal["image", "video"] | None = None
     description: str | None = None
-    prompt_profile: Literal["prose", "minimax_h3_ref"] | None = None
+    prompt_profile: Literal["prose", "minimax_h3_ref", "minimax_h3_base"] | None = None
     is_enabled: bool | None = None
 
 
@@ -253,6 +257,14 @@ class GenerateVideosRequest(BaseModel):
     # Clip-id → confirmed prompt text (from the review modal). Wins over the
     # LLM rewrite and over any saved draft.
     prompts: dict[int, str] | None = None
+
+
+class EnhanceVideosRequest(BaseModel):
+    workflow_id: int
+    # Omission means all rendered clips; an explicit list selects individual shots.
+    clip_ids: list[int] | None = None
+    input_values: dict[str, Any] = Field(default_factory=dict)
+    output_node_id: str | None = None
 
 
 class PreviewPromptRequest(BaseModel):

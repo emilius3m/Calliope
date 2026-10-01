@@ -12,6 +12,7 @@ def _resolve_field(field: str, inputs: dict[str, Any]) -> str:
 
     Known variants:
     - text ↔ value (PrimitiveString-style nodes expose `value`, not `text`).
+    - text ↔ positive_prompt / prompt (Wan / custom text encode nodes).
     - audio ↔ audio: (VHS_LoadAudio names its widget `audio:` with a colon).
     The fallback stays guarded to these exact sibling pairs — never a fuzzy
     match — so an unknown node can't have its values written to some
@@ -19,10 +20,19 @@ def _resolve_field(field: str, inputs: dict[str, Any]) -> str:
     """
     if field in inputs:
         return field
-    siblings = {"text": "value", "value": "text", "audio": "audio:", "audio:": "audio"}
+    siblings = {
+        "text": "value",
+        "value": "text",
+        "audio": "audio:",
+        "audio:": "audio",
+    }
     alt = siblings.get(field)
     if alt and alt in inputs:
         return alt
+    if field == "text":
+        for cand in ("positive_prompt", "prompt"):
+            if cand in inputs:
+                return cand
     return field
 
 

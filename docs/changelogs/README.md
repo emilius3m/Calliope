@@ -2,6 +2,8 @@
 
 Dated notes for GitHub releases. Newest first.
 
+- [2026-10-01 clip enhancement](./2026-10-01-clip-enhancement.md) — separate Video → Enhance pass for one clip or all rendered clips; preserve generation settings and originals; compare results and select the film version
+
 - [2026-09-27 story continuity plans](./2026-09-27-story-continuity.md) — one film plan per project shared by the Video tab and project-linked AI Canvas; H3 compiles a clip from that slice; the prompt modal shows continuity notes and Generate stays available (1.5.8)
 - [2026-09-24 clip workflow + runtime budget](./2026-09-24-clip-workflow-runtime-budget.md) — workflow per clip (not per scene); target runtime is a budget that can shrink; media inputs that are directories fail fast with a node-naming error; attachment turns no longer crash the orchestrator, `ask_user` closes its tool batch (1.5.7)
 - [2026-09-22 project name alias patch](./2026-09-22-project-name-alias.md) — `name` accepted for a project's title on the REST API and agent tools; fixes storyline builds dead-ending on a 422 (1.5.6)

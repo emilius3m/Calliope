@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import shutil
+import tempfile
+from pathlib import Path
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from calliope.config import settings
 from calliope.db import get_db, row_to_dict
 from calliope.models.schemas import Project, ProjectCreate, ProjectUpdate
+from calliope.project_transfer import export_project, import_project
 
 router = APIRouter()
 
@@ -41,6 +48,36 @@ async def create_project(payload: ProjectCreate):
         return row_to_dict(row)
     finally:
         conn.close()
+
+
+@router.post("/import")
+async def import_project_archive(file: UploadFile = File(...)):
+    """Create a new project from an archive made by GET /{id}/export."""
+    fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="calliope-import-")
+    path = Path(tmp)
+    try:
+        with open(fd, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        return await import_project(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        path.unlink(missing_ok=True)
+
+
+@router.get("/{project_id}/export")
+async def export_project_archive(project_id: int, include_videos: bool = False):
+    """The whole project as a .zip (images always; videos when include_videos)."""
+    try:
+        path, name = await export_project(project_id, include_videos=include_videos)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=name,
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
 
 
 @router.get("", response_model=list[Project])
