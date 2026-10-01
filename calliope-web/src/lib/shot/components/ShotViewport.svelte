@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { authenticatedFetch as fetch } from '$lib/auth.svelte';
 	/**
 	 * The 3D blockout viewport — plain three.js (no React; Svelte port of
 	 * open-media's ComposerViewport). Renders the store's composition:

@@ -1,3 +1,5 @@
+import { refreshAuth } from '$lib/auth.svelte';
+
 export type CalliopeEvent = {
 	type: string;
 	data: Record<string, unknown>;
@@ -71,6 +73,7 @@ export function connectEvents(
 		].forEach((name) => es!.addEventListener(name, handler as EventListener));
 		es.onmessage = handler;
 		es.onerror = () => {
+			void refreshAuth();
 			onState?.('reconnecting');
 			es?.close();
 			if (!closed) {

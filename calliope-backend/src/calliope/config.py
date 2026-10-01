@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     data_dir: Path = DEFAULT_DATA_DIR
     assets_dir: Path = DEFAULT_ASSETS_DIR
     db_name: str = "calliope.db"
+    # Shared administrator access for this installation. Credentials/sessions
+    # live in data_dir/auth.db, separately from transferable project data.
+    auth_enabled: bool = True
+    auth_secure_cookie: bool = True
+    auth_allowed_origins: list[str] = Field(default_factory=lambda: [
+        "http://127.0.0.1:5173", "http://localhost:5173",
+        "http://127.0.0.1:8247", "http://localhost:8247",
+    ])
     # Dedicated sandbox folder the agent shell (run_command) may work in.
     # None → data_dir / "workspace". The shell's cwd AND its path-like args
     # are containment-checked against this folder (plus assets_dir for
@@ -337,6 +345,9 @@ class Settings(BaseSettings):
             "assets_dir": str(self.assets_dir),
             "agent_workspace_dir": str(self.workspace_dir),
             "db_name": self.db_name,
+            "auth_enabled": self.auth_enabled,
+            "auth_secure_cookie": self.auth_secure_cookie,
+            "auth_allowed_origins": list(self.auth_allowed_origins),
             "llm_base_url": self.llm_base_url,
             "llm_model": self.llm_model,
             "llm_api_key": bool(self.llm_api_key),
@@ -433,6 +444,9 @@ class Settings(BaseSettings):
             "assets_dir": str(self.assets_dir),
             "agent_workspace_dir": str(self.workspace_dir),
             "db_name": self.db_name,
+            "auth_enabled": self.auth_enabled,
+            "auth_secure_cookie": self.auth_secure_cookie,
+            "auth_allowed_origins": list(self.auth_allowed_origins),
             "llm_base_url": self.llm_base_url,
             "llm_model": self.llm_model,
             "llm_api_key": self.llm_api_key,

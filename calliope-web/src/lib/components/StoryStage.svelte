@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { authenticatedFetch as fetch } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import {

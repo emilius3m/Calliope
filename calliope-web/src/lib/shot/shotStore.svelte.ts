@@ -14,6 +14,7 @@
  *   canvas graph-sync rule).
  */
 import * as THREE from 'three';
+import { authenticatedFetch as fetch } from '$lib/auth.svelte';
 import {
 	clonePosture,
 	describePostureError,

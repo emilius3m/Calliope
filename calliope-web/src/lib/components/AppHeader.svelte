@@ -1,6 +1,13 @@
 <script lang="ts">
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 	import { t } from '$lib/i18n.svelte';
+	import { auth, authentication } from '$lib/auth.svelte';
+	import { toast } from '$lib/toast';
+
+	async function signOut() {
+		try { await authentication.logout(); }
+		catch (e) { toast.error(e instanceof Error ? e.message : t('auth.failed')); }
+	}
 
 interface Props {
 	active?: 'projects' | 'canvas' | 'build-scene' | 'library' | 'settings';
@@ -36,6 +43,10 @@ interface Props {
 	</div>
 	<div class="header-right">
 		<LanguageSwitcher />
+		{#if auth.enabled && auth.user}
+			<a class="nav-link" href="/account">{auth.user.username}</a>
+			<button class="nav-link" onclick={signOut}>{t('auth.signOut')}</button>
+		{/if}
 		{#if children}
 			{@render children()}
 		{/if}
@@ -95,6 +106,9 @@ interface Props {
 		margin-left: 8px;
 	}
 	.nav-link {
+		background: transparent;
+		border: 0;
+		font-family: inherit;
 		padding: 8px 12px;
 		border-radius: var(--radius-sm);
 		color: var(--text-secondary);

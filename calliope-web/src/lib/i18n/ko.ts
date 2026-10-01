@@ -1,6 +1,7 @@
-import type { Dict } from "./en";
+import { authEnglish, type Dict } from "./en";
 
 export const ko: Dict = {
+  ...authEnglish,
   // --- Common ---
   "common.add": "추가",
   "common.cancel": "취소",

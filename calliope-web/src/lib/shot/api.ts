@@ -1,4 +1,5 @@
 /** Typed fetch helpers for the /api/shots surface. */
+import { authenticatedFetch as fetch } from '$lib/auth.svelte';
 
 export interface Capture {
 	id: number;

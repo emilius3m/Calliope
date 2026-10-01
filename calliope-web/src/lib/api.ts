@@ -1,5 +1,6 @@
 import type { AgentComposerPayload } from "$lib/agentComposer";
 import { t } from "$lib/i18n.svelte";
+import { expireAuth } from "$lib/auth.svelte";
 
 const API_BASE = "";
 
@@ -134,10 +135,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      "X-Calliope-Request": "1",
       ...init?.headers,
     },
   });
   if (!res.ok) {
+    if (res.status === 401) expireAuth();
     const body = await res.text().catch(() => t("api.unknownError"));
     throw new Error(`${res.status}: ${body}`);
   }
@@ -146,8 +149,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** Multipart variant of api() — FormData sets its own Content-Type boundary. */
 async function apiUpload<T>(path: string, form: FormData): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST", body: form, headers: { "X-Calliope-Request": "1" },
+  });
   if (!res.ok) {
+    if (res.status === 401) expireAuth();
     const body = await res.text().catch(() => t("api.unknownError"));
     throw new Error(`${res.status}: ${body}`);
   }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { authenticatedFetch as fetch } from '$lib/auth.svelte';
 	import { onMount } from 'svelte';
 	import { toStore } from 'svelte/store';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';

@@ -1,6 +1,7 @@
-import type { Dict } from "./en";
+import { authEnglish, type Dict } from "./en";
 
 export const es: Dict = {
+  ...authEnglish,
   // --- Common ---
   "common.add": "Añadir",
   "common.cancel": "Cancelar",

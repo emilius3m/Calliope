@@ -10,7 +10,8 @@ export default defineConfig({
 		proxy: {
 			'/api': {
 				target: 'http://127.0.0.1:8247',
-				changeOrigin: true,
+				// Preserve the browser-facing origin for authenticated requests.
+				changeOrigin: false,
 			},
 		},
 	},

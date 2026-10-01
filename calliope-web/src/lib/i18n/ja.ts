@@ -1,6 +1,7 @@
-import type { Dict } from "./en";
+import { authEnglish, type Dict } from "./en";
 
 export const ja: Dict = {
+  ...authEnglish,
   // --- Common ---
   "common.add": "追加",
   "common.cancel": "キャンセル",

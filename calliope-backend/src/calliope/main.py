@@ -13,6 +13,7 @@ from starlette.responses import Response
 from starlette.types import Scope
 
 from calliope import __version__
+from calliope.auth import AuthMiddleware, initialize_auth, router as auth_router
 from calliope.config import settings
 from calliope.db import get_db, migrate_db, rebase_stale_asset_paths
 from calliope.queue.worker import queue_worker
@@ -89,6 +90,8 @@ async def lifespan(app: FastAPI):
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.assets_dir.mkdir(parents=True, exist_ok=True)
     await migrate_db(settings.db_path)
+    if settings.auth_enabled:
+        initialize_auth()
     # Folder moved? Stored asset paths still point at the old install root —
     # rebase them onto the current data dir before serving anything.
     conn = get_db(settings.db_path)
@@ -124,12 +127,14 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.auth_allowed_origins if settings.auth_enabled else ["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
+    app.add_middleware(AuthMiddleware)
+    app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
     app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
     app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
     app.include_router(story.router, prefix="/api/projects", tags=["story"])

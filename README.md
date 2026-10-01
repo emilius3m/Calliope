@@ -46,6 +46,30 @@ Open `http://127.0.0.1:5173`. The dev server proxies `/api` to the backend on `1
 
 ## First run
 
+Calliope requires an administrator login by default. On first launch, open the
+browser and create the account using the one-time code in
+`calliope-backend/data/auth-setup-code.txt` (or your configured data directory).
+The backend log prints the file's location. Choose a username and a password
+of at least 12 characters. The code is consumed once; public visitors cannot
+claim the account without it. No default username/password is shipped.
+
+The username in the header opens **Your account**, where you can change the
+password. **Sign out** revokes the current session. Changing or locally
+resetting the password revokes all other browser sessions and API tokens.
+Browser sessions expire after 12 hours, or one hour without authenticated
+activity. Login attempts are limited to 10 per client address per 15 minutes.
+Passwords are salted scrypt hashes; session/API tokens are stored only as
+SHA-256 digests in a separate `auth.db`. Credentials are excluded from project
+archives and Git. Each installation has its own administrator and shared studio.
+
+From `calliope-backend`, these local commands retrieve the initial setup code
+or recover an existing account without sending passwords through chat:
+
+```powershell
+.venv\Scripts\python -m calliope.auth setup-code
+.venv\Scripts\python -m calliope.auth reset-password
+```
+
 Open the app, go to **Settings**, and set:
 
 1. **LLM** — one or more OpenAI-compatible endpoints (base URL, model name, API key). Save several, then pick which one is **Active**.
@@ -53,6 +77,28 @@ Open the app, go to **Settings**, and set:
 3. **Agent** *(optional)* — assign a specific LLM per agent role (see below)
 
 Leave **Dry-run** off — it is meant for testing and produces placeholder results instead of real generations.
+
+### Internet access and HTTPS
+
+Keep the backend bound to `127.0.0.1` and put your HTTPS reverse proxy in front
+of the app. It must proxy `/api/*` as well as the frontend, preserve streaming
+responses for `/api/events`, and pass the public host and HTTPS scheme to the
+backend. Trust forwarded headers only from your own reverse proxy. For
+`https://video.parcosepino.net`, add that exact origin to `auth_allowed_origins`
+in the server's private `calliope_config.json` and keep `auth_enabled` and
+`auth_secure_cookie` set to `true`. Restart the backend after editing it.
+
+Serve a production frontend build for public access. For example, build with
+`npm run build` in `calliope-web`, then serve its `build` directory through your
+web server while forwarding `/api/*` to the backend. API routes, downloads,
+events, OpenAPI documentation and `/mcp` require authentication; frontend
+HTML/assets remain public so that the login screen can load. Non-loopback
+plain HTTP API requests are refused when `auth_secure_cookie` is enabled.
+
+For a deliberately unprotected local installation only, `auth_enabled: false`
+in the private configuration disables the login. For LAN HTTP without TLS,
+`auth_secure_cookie: false` permits HTTP cookies. These switches are not
+available through the web settings API.
 
 ### Queue settings
 
@@ -95,6 +141,12 @@ The backend is also an **MCP server** at `http://127.0.0.1:8247/mcp` (streamable
 ```bash
 claude mcp add --transport http calliope http://127.0.0.1:8247/mcp
 ```
+
+With authentication enabled, issue a dedicated API token on the server using
+`.venv\Scripts\python -m calliope.auth token`, then configure the MCP client
+to send `Authorization: Bearer <token>` on every request. Tokens expire after
+30 days and are revoked by a password change/reset. Do not put tokens in URLs,
+commit them, or reuse browser session cookies as API credentials.
 
 Opening Claude Code in this folder also picks up the bundled `.mcp.json`. Start with `list_projects` → `select_project` (or `create_project`, which selects the new project); the selection is kept on a **Claude Code (MCP)** session. Rendering tools (`enqueue_asset_jobs`, `enqueue_video_jobs`, `run_workflow`) and deletions are flagged destructive, so Claude Code asks before running them — that prompt replaces the chat-based render approval. Build Scene, AI Canvas, `ask_user` and `run_command` stay in the app. The endpoint only answers `localhost` / `127.0.0.1` hosts.
 

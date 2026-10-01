@@ -2,6 +2,7 @@
 
 Dated notes for GitHub releases. Newest first.
 
+- [2026-10-01 administrator authentication](./2026-10-01-authentication.md) — first-account setup, sign-in, protected APIs/media, session revocation and HTTPS configuration
 - [2026-10-01 clip enhancement](./2026-10-01-clip-enhancement.md) — separate Video → Enhance pass for one clip or all rendered clips; preserve generation settings and originals; compare results and select the film version
 
 - [2026-09-27 story continuity plans](./2026-09-27-story-continuity.md) — one film plan per project shared by the Video tab and project-linked AI Canvas; H3 compiles a clip from that slice; the prompt modal shows continuity notes and Generate stays available (1.5.8)

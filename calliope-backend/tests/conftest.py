@@ -11,6 +11,14 @@ from calliope.db import migrate_db
 from calliope.main import create_app
 
 
+@pytest.fixture(autouse=True)
+def _isolated_auth_defaults(monkeypatch):
+    # Existing application tests exercise domain behavior without a login.
+    # Auth integration tests explicitly opt in using their isolated data dir.
+    from calliope.config import settings
+    monkeypatch.setattr(settings, "auth_enabled", False)
+
+
 @pytest.fixture
 def client(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
