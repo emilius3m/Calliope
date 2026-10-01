@@ -224,14 +224,14 @@
 
   const videoWorkflows = $derived(
     (($workflowsQuery.data ?? []) as Workflow[]).filter(
-      (w) => w.is_enabled && w.kind === "video",
+      (w) => w.is_enabled && w.kind === "video" && w.purpose !== "enhancement",
     ),
   );
   const enabledWorkflows = $derived(
     videoWorkflows.length > 0
       ? videoWorkflows
       : (($workflowsQuery.data ?? []) as Workflow[]).filter(
-          (w) => w.is_enabled,
+          (w) => w.is_enabled && w.purpose !== "enhancement",
         ),
   );
 

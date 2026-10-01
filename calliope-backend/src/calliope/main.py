@@ -14,6 +14,7 @@ from starlette.types import Scope
 
 from calliope import __version__
 from calliope.auth import AuthMiddleware, initialize_auth, router as auth_router
+from calliope.comfyui.builtin import install_builtin_workflows
 from calliope.config import settings
 from calliope.db import get_db, migrate_db, rebase_stale_asset_paths
 from calliope.queue.worker import queue_worker
@@ -96,6 +97,7 @@ async def lifespan(app: FastAPI):
     # rebase them onto the current data dir before serving anything.
     conn = get_db(settings.db_path)
     try:
+        install_builtin_workflows(conn)
         rebased = rebase_stale_asset_paths(conn, settings.data_dir, settings.assets_dir)
         if rebased:
             conn.commit()

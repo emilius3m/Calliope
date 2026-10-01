@@ -18,6 +18,17 @@ from calliope.comfyui.roles import (
 )
 
 
+def workflow_purpose(workflow: dict[str, Any]) -> str:
+    """Explicit enhancement presets stay out of automatic video generation."""
+    if any(
+        isinstance(node, dict)
+        and (node.get("_meta") or {}).get("calliope_purpose") == "enhancement"
+        for node in workflow.values()
+    ):
+        return "enhancement"
+    return "generation"
+
+
 def extract_default_value(node: dict[str, Any]) -> str | int | float | None:
     class_type = node.get("class_type", "")
     inputs = node.get("inputs") or {}

@@ -34,7 +34,10 @@ a = Analysis(
     [os.path.join(BACKEND_DIR, "launcher.py")],
     pathex=[BACKEND_DIR, os.path.join(BACKEND_DIR, "src")],
     binaries=[],
-    datas=[(WEB_BUILD, "calliope/static")],
+    datas=[
+        (WEB_BUILD, "calliope/static"),
+        (os.path.join(BACKEND_DIR, "src", "calliope", "presets"), "calliope/presets"),
+    ],
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},

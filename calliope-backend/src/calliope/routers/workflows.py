@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from calliope.comfyui.parser import parse_dynamic_inputs, parse_dynamic_outputs
+from calliope.comfyui.parser import parse_dynamic_inputs, parse_dynamic_outputs, workflow_purpose
 from calliope.comfyui.profiles import detect_prompt_profile
 from calliope.config import settings
 from calliope.db import get_db, row_to_dict
@@ -17,6 +17,7 @@ router = APIRouter()
 def _serialize_workflow(row: Any) -> dict[str, Any]:
     data = row_to_dict(row)
     data["workflow_json"] = json.loads(data["workflow_json"])
+    data["purpose"] = workflow_purpose(data["workflow_json"])
     data["input_schema"] = json.loads(data["input_schema"]) if data.get("input_schema") else []
     data["output_schema"] = json.loads(data["output_schema"]) if data.get("output_schema") else []
     data["is_enabled"] = bool(data.get("is_enabled"))

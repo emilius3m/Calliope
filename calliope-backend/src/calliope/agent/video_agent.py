@@ -29,7 +29,7 @@ from calliope.agent.prompts import (
     video_appearance,
     video_setting,
 )
-from calliope.comfyui.parser import parse_dynamic_inputs
+from calliope.comfyui.parser import parse_dynamic_inputs, workflow_purpose
 from calliope.comfyui.profiles import H3_PROFILES
 from calliope.comfyui.roles import input_has_role
 from calliope.comfyui.smart_fill import ref_image_slots, ref_video_slots, smart_fill_inputs
@@ -464,14 +464,18 @@ def _get_workflow(workflow_id: int | None = None) -> dict[str, Any] | None:
             row = conn.execute(
                 "SELECT * FROM workflows WHERE id = ? AND is_enabled = 1", (workflow_id,)
             ).fetchone()
+            if row and workflow_purpose(json.loads(row["workflow_json"])) == "enhancement":
+                raise ValueError("This workflow enhances existing clips. Use Video → Enhance.")
         else:
-            row = conn.execute(
-                "SELECT * FROM workflows WHERE kind = 'video' AND is_enabled = 1 ORDER BY id ASC LIMIT 1"
-            ).fetchone()
-            if not row:
-                row = conn.execute(
-                    "SELECT * FROM workflows WHERE is_enabled = 1 ORDER BY id ASC LIMIT 1"
-                ).fetchone()
+            candidates = conn.execute(
+                "SELECT * FROM workflows WHERE is_enabled = 1 "
+                "ORDER BY CASE WHEN kind = 'video' THEN 0 ELSE 1 END, id"
+            ).fetchall()
+            row = next(
+                (candidate for candidate in candidates
+                 if workflow_purpose(json.loads(candidate["workflow_json"])) == "generation"),
+                None,
+            )
         return row_to_dict(row) if row else None
     finally:
         conn.close()

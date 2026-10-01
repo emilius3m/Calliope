@@ -23,13 +23,14 @@ export interface ComfyDynamicOutput {
 export interface WorkflowNode {
   class_type: string;
   inputs: Record<string, unknown>;
-  _meta?: { title?: string };
+  _meta?: { title?: string; calliope_purpose?: "generation" | "enhancement" };
 }
 
 export interface Workflow {
   id: number;
   name: string;
   kind: "image" | "video";
+  purpose?: "generation" | "enhancement";
   workflow_json: Record<string, WorkflowNode>;
   input_schema: ComfyDynamicInput[];
   output_schema: ComfyDynamicOutput[];

@@ -1,0 +1,96 @@
+{
+  "1": {
+    "class_type": "LoadVideo",
+    "inputs": { "file": "" },
+    "_meta": { "title": "(Input:video) Original clip" }
+  },
+  "2": {
+    "class_type": "GetVideoComponents",
+    "inputs": { "video": ["1", 0] },
+    "_meta": { "title": "Original frames, audio and frame rate" }
+  },
+  "3": {
+    "class_type": "SeedVR2LoadDiTModel",
+    "inputs": {
+      "model": "seedvr2_ema_3b-Q4_K_M.gguf",
+      "device": "cuda:0",
+      "offload_device": "cpu",
+      "blocks_to_swap": 32,
+      "swap_io_components": true,
+      "cache_model": false,
+      "attention_mode": "sdpa"
+    },
+    "_meta": { "title": "SeedVR2 3B Q4 — 8GB VRAM" }
+  },
+  "4": {
+    "class_type": "SeedVR2LoadVAEModel",
+    "inputs": {
+      "model": "ema_vae_fp16.safetensors",
+      "device": "cuda:0",
+      "offload_device": "cpu",
+      "cache_model": false,
+      "encode_tiled": true,
+      "encode_tile_size": 512,
+      "encode_tile_overlap": 128,
+      "decode_tiled": true,
+      "decode_tile_size": 512,
+      "decode_tile_overlap": 128,
+      "tile_debug": "false"
+    },
+    "_meta": { "title": "SeedVR2 VAE — tiled encode/decode" }
+  },
+  "5": {
+    "class_type": "PrimitiveInt",
+    "inputs": { "value": 720 },
+    "_meta": { "title": "(Input) Output resolution (short edge, px)" }
+  },
+  "6": {
+    "class_type": "PrimitiveInt",
+    "inputs": { "value": 5 },
+    "_meta": { "title": "(Input) Frames per batch (1, 5, 9, 13...)" }
+  },
+  "7": {
+    "class_type": "SeedVR2VideoUpscaler",
+    "inputs": {
+      "image": ["2", 0],
+      "dit": ["3", 0],
+      "vae": ["4", 0],
+      "seed": 42,
+      "resolution": ["5", 0],
+      "max_resolution": 0,
+      "batch_size": ["6", 0],
+      "uniform_batch_size": true,
+      "temporal_overlap": 1,
+      "prepend_frames": 0,
+      "color_correction": "lab",
+      "input_noise_scale": 0.0,
+      "latent_noise_scale": 0.0,
+      "offload_device": "cpu",
+      "enable_debug": false
+    },
+    "_meta": { "title": "SeedVR2 video enhancement" }
+  },
+  "8": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": ["7", 0],
+      "audio": ["2", 1],
+      "fps": ["2", 2]
+    },
+    "_meta": { "title": "Keep original audio and frame rate" }
+  },
+  "9": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": ["8", 0],
+      "filename_prefix": "Calliope/SeedVR2/enhanced",
+      "format": "mp4",
+      "codec": "h264",
+      "format.codec": "h264"
+    },
+    "_meta": {
+      "title": "(Output:video) SeedVR2 enhanced video",
+      "calliope_purpose": "enhancement"
+    }
+  }
+}

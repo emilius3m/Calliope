@@ -260,6 +260,30 @@ When ComfyUI rejects a workflow, the job error now names the actual cause and no
 
 Enhancement settings are saved independently per clip. Regenerating an original makes its earlier enhancement out of date and switches that clip back to the new original. Project archives with videos preserve both versions and the film selection.
 
+**SeedVR2 Video Upscale — 8GB** is added to the workflow library at startup and
+is available in **Enhance**. Existing edits and a disabled preset are preserved.
+It uses SeedVR2 3B Q4_K_M, CPU offload, 32 swapped blocks and 512-pixel VAE tiles.
+The default output has a 720-pixel short edge and five frames per batch;
+both values can be edited in Enhance. Batch sizes follow `4n+1` (1, 5, 9, 13…).
+Audio, frame rate and aspect ratio come from the original clip, with no frame
+interpolation or crop. SeedVR2 does not require a text prompt.
+
+Install [ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler)
+through ComfyUI Manager, then restart ComfyUI. Its requirements use ComfyUI's
+Python environment (Python 3.12+). The models `seedvr2_ema_3b-Q4_K_M.gguf` and
+`ema_vae_fp16.safetensors` belong in `ComfyUI/models/SEEDVR2`; the nodes can
+download them on first use. RAM usage also grows with clip length and output
+resolution; the 8GB preset saves VRAM by moving models and tensors to RAM.
+The preset requires the stock `LoadVideo`, `GetVideoComponents`, `CreateVideo`
+and `SaveVideo` nodes from a recent ComfyUI installation.
+
+The importable API example is
+`example_ComfyUI_workflows/SeedVR2_Video_Upscale_8GB_API.json`; its visual canvas
+version is `visual_workflows_ComfyUI/SeedVR2_Video_Upscale_8GB.json`.
+The canonical bundled graph is under `calliope-backend/src/calliope/presets/`.
+Its output node carries `_meta.calliope_purpose: "enhancement"`, so it is
+excluded from scene-generation choices and automatic generation defaults.
+
 `example_ComfyUI_workflows/Wan21_Restore_Enhance_Upscale_API.json` is the tagged API version of the supplied visual Wan workflow. It requires WanVideoWrapper, VideoHelperSuite, KJNodes, Frame Interpolation, the listed LoRAs, RealESRGAN and RIFE models. In particular, `Wan2_1-T2V-14B_fp8_e4m3fn.safetensors` must be visible under ComfyUI's diffusion models and `Wan2_1_VAE_bf16.safetensors` under its VAEs. This preset resamples input to 24 fps, crops to 960×720, and produces a final 2880×2160 video at 48 fps. Edit the workflow's dimensions/framing in ComfyUI for a different aspect ratio. Film export still normalizes the selected clips to 1080p.
 
 ### 3. Export the workflow

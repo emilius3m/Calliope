@@ -2,6 +2,7 @@
 
 Dated notes for GitHub releases. Newest first.
 
+- [2026-10-01 SeedVR2 enhancement](./2026-10-01-seedvr2.md) — bundled 8GB preset in Enhance, editable resolution/batch size and original audio/frame rate
 - [2026-10-01 administrator authentication](./2026-10-01-authentication.md) — first-account setup, sign-in, protected APIs/media, session revocation and HTTPS configuration
 - [2026-10-01 clip enhancement](./2026-10-01-clip-enhancement.md) — separate Video → Enhance pass for one clip or all rendered clips; preserve generation settings and originals; compare results and select the film version
 
