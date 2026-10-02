@@ -63,6 +63,40 @@ def _form_media_path(values: dict[str, Any], node_id: Any) -> str | None:
     return text or None
 
 
+DEFAULT_SHEET_PANELS = (
+    "a front full-body view, a side full-body view, a back full-body view, "
+    "a three-quarter view and a head close-up"
+)
+
+
+def _image_is_landscape(path: str) -> bool:
+    """True for a clearly wide picture; unreadable files count as not wide."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            width, height = im.size
+    except Exception:
+        return False
+    return width >= 1.25 * height
+
+
+def character_sheet_panels(character: dict[str, Any], image_path: str | None) -> str | None:
+    """Panel description when the character's picture is a multi-panel sheet, else None.
+
+    H3 must read a sheet as one character seen from several sides; described as
+    a plain picture it puts every panel on screen. The user's choice wins; 'auto'
+    treats a wide character picture as a sheet (single figures are tall).
+    """
+    layout = (character.get("reference_layout") or "auto").strip().lower()
+    if layout == "single" or not image_path:
+        return None
+    panels = (character.get("reference_panels") or "").strip() or DEFAULT_SHEET_PANELS
+    if layout == "sheet":
+        return panels
+    return panels if _image_is_landscape(image_path) else None
+
+
 def _story_image_roster(
     characters: list[dict[str, Any]],
     location: dict[str, Any] | None,
@@ -80,17 +114,19 @@ def _story_image_roster(
         img = c.get("sheet_path") or c.get("portrait_path")
         if not img:
             continue
-        roster.append(
-            {
-                "kind": "character",
-                "name": c.get("name"),
-                # Not consistency_prompt: that is the sheet's image prompt
-                # ("neutral backdrop, studio lighting") and drags the clip
-                # away from the scene's environment.
-                "appearance": video_appearance(c),
-                "path": img,
-            }
-        )
+        entry = {
+            "kind": "character",
+            "name": c.get("name"),
+            # Not consistency_prompt: that is the sheet's image prompt
+            # ("neutral backdrop, studio lighting") and drags the clip
+            # away from the scene's environment.
+            "appearance": video_appearance(c),
+            "path": img,
+        }
+        panels = character_sheet_panels(c, img)
+        if panels:
+            entry["sheet"] = panels
+        roster.append(entry)
     if loc_image:
         setting = video_setting(location) or {"name": "the location", "description": ""}
         roster.append(
@@ -183,6 +219,8 @@ def resolve_h3_references(
                     "appearance": matched.get("appearance") or "",
                     "path": user_path,
                 }
+                if matched.get("sheet"):
+                    subject["sheet"] = matched["sheet"]
             else:
                 subject = {
                     "kind": "reference",
@@ -198,6 +236,8 @@ def resolve_h3_references(
                 "appearance": item.get("appearance") or "",
                 "path": item["path"],
             }
+            if item.get("sheet"):
+                subject["sheet"] = item["sheet"]
             user_path = item["path"]
         else:
             continue
@@ -219,13 +259,24 @@ def resolve_h3_references(
     return subjects, image_paths, videos
 
 
-def _reference_signature(image_paths: list[str], video_paths: list[str]) -> str:
-    """Fingerprint of the files a draft was written against. Empty when none."""
+def _reference_signature(
+    image_paths: list[str],
+    video_paths: list[str],
+    subjects: list[dict[str, Any]] | None = None,
+) -> str:
+    """Fingerprint of the files a draft was written against. Empty when none.
+
+    Sheet subjects add their indices, so switching a character between single
+    figure and sheet re-drafts its clips; without sheets the value is unchanged.
+    """
     parts: list[str] = []
     if image_paths:
         parts.append("img=" + ",".join(image_paths))
     if video_paths:
         parts.append("vid=" + ",".join(video_paths))
+    sheets = [str(s["index"]) for s in subjects or [] if s.get("sheet")]
+    if sheets:
+        parts.append("sheets=" + ",".join(sheets))
     return "|".join(parts)
 
 
@@ -631,7 +682,7 @@ async def preview_clip_prompt(
     subjects, _image_paths, videos = resolve_h3_references(
         inputs, form_values, characters, loc_row, loc_image, items
     )
-    ref_sig = _reference_signature(_image_paths, [v["path"] for v in videos])
+    ref_sig = _reference_signature(_image_paths, [v["path"] for v in videos], subjects)
     hash_clip = {
         **clip,
         "character_ids": [c["id"] for c in characters],
@@ -866,7 +917,7 @@ async def enqueue_video_jobs(
                 subjects, ref_paths, videos = resolve_h3_references(
                     inputs, extra_values, characters, loc_row, loc_image, items
                 )
-                ref_sig = _reference_signature(ref_paths, [v["path"] for v in videos])
+                ref_sig = _reference_signature(ref_paths, [v["path"] for v in videos], subjects)
                 ledger = str((continuity_plan or {}).get("based_on") or "")
                 lock = continuity_lock_text(continuity_plan, int(clip["id"]))
                 # Prompt precedence: explicit request → saved (fresh) draft → LLM.
@@ -1131,7 +1182,7 @@ async def client_prompt_states(
                 subjects, ref_paths, videos = resolve_h3_references(
                     inputs, _stored_input_values(clip), characters, loc_row, loc_image, items
                 )
-                ref_sig = _reference_signature(ref_paths, [v["path"] for v in videos])
+                ref_sig = _reference_signature(ref_paths, [v["path"] for v in videos], subjects)
                 state["based_on"] = _clip_prompt_hash(hash_input, references=ref_sig, ledger=ledger)
                 messages = build_minimax_h3_ref_messages(
                     scene,

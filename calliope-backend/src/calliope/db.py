@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS characters (
     portrait_path TEXT,
     sheet_path TEXT,
     consistency_prompt TEXT,
+    reference_layout TEXT,
+    reference_panels TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -355,6 +357,10 @@ async def migrate_db(db_path: Path) -> None:
     for column, kind in trim_cols:
         if column not in clip_cols:
             conn.execute(f"ALTER TABLE clips ADD COLUMN {column} {kind}")
+    char_cols = {r[1] for r in conn.execute("PRAGMA table_info(characters)").fetchall()}
+    for column in ("reference_layout", "reference_panels"):
+        if column not in char_cols:
+            conn.execute(f"ALTER TABLE characters ADD COLUMN {column} TEXT")
     # Clips layer: mirror each existing scene's production state into a
     # default clip #1 so the 1:1 legacy behavior keeps working unchanged.
     # Guarded on table emptiness — runs once, never touches clips the user

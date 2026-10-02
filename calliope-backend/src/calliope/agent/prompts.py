@@ -738,7 +738,8 @@ MINIMAX_H3_REF_SYSTEM = (
     "1. subject_definitions: one line per referenced image supplied in the user message, "
     "keeping its exact <Subject N> index. Form: '<Subject N> is the <description> in "
     "<Picture N>, with <key visual features to preserve>.' <Picture N> is the reference "
-    "image wired to slot N — cite it inside the subject line, never as a standalone entry. "
+    "image wired to slot N — cite it inside the subject line, never as a standalone entry, "
+    "except a CHARACTER SHEET (rule 9). "
     "Describe what is actually in that picture: face, hair, wardrobe, armor, weapons, "
     "colors, body, and setting. When a picture is attached, those pixels win over the "
     "story names. Do not replace a supplied image with a story character or location "
@@ -772,9 +773,16 @@ MINIMAX_H3_REF_SYSTEM = (
     "establish that environment (space, key features, lighting, time of day) and every "
     "later shot stays in it — whether or not the setting has its own reference image. "
     "The overall_soundscape follows that environment.\n"
-    "9. Character reference images are turnaround sheets on neutral backdrops: take only "
-    "identity (face, hair, body, wardrobe) from them — never their backdrop, panel layout, "
-    "or studio lighting.\n"
+    "9. A character picture gives identity only (face, hair, body, wardrobe) — never its "
+    "backdrop or studio lighting. When the roster marks a picture as a CHARACTER SHEET (one "
+    "image, several panels of the same character), declare it on its own line before the "
+    "subject: '<Picture N> is a character sheet of <name> with <panels>; every panel shows "
+    "the same one character.' Then define '<Subject N> is <name>, the one character shown "
+    "in every panel of <Picture N>, with <features>.' In retention_analysis add '<Picture N> "
+    "(character sheet for <Subject N>): partially_preserved - the panels give the identity "
+    "from every side; the panel layout, the backdrop and the printed labels stay in the "
+    "sheet.' In detailed_description, introduce <Subject N> once, as one single character "
+    "whose look follows the front full-body and close-up panels of <Picture N>.\n"
     "10. Characters listed without a reference image are described from their text only and "
     "never get a <Subject N> label.\n"
     "11. An item subject is a prop: keep the shape, colors and materials of its picture and "
@@ -797,10 +805,17 @@ def _subject_roster_lines(subjects: list[dict[str, Any]]) -> str:
         path = str(s.get("path") or "").strip()
         if path:
             file_bit = f", file {Path(path).name}"
-        lines.append(
+        line = (
             f"<Subject {s['index']}> = {s['kind']} \"{s.get('name') or 'unnamed'}\" "
             f"(reference image slot {s['index']}{file_bit}): {appearance}"
         )
+        if s.get("sheet"):
+            line += (
+                f" — Picture {s['index']} is a CHARACTER SHEET of this one character "
+                f"(panels: {s['sheet']}); declare it as its own <Picture {s['index']}> "
+                "line (rule 9)."
+            )
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -954,9 +969,35 @@ def minimax_h3_ref_fallback(
     videos = videos or []
     defs = []
     retention = []
+    sheet_intros = []
     for s in subjects:
         name = s.get("name") or "unnamed"
         desc = (s.get("appearance") or "").strip().rstrip(".")
+        if s.get("sheet"):
+            # A sheet named only inside the subject line puts every panel on screen.
+            n = s["index"]
+            defs.append(
+                f"<Picture {n}> is a character sheet of {name} with {s['sheet']}; "
+                "every panel shows the same one character."
+            )
+            defs.append(
+                f"<Subject {n}> is {name}, the one character shown in every panel of "
+                f"<Picture {n}>" + (f", {desc}." if desc else ".")
+            )
+            retention.append(
+                f"<Picture {n}> (character sheet for <Subject {n}>): partially_preserved - "
+                "the panels give the identity from every side; the panel layout, the "
+                "backdrop and the printed labels stay in the sheet."
+            )
+            retention.append(
+                f"<Subject {n}> (appears in [Shot 1]): fully_preserved - "
+                f"the referenced appearance of \"{name}\" is retained."
+            )
+            sheet_intros.append(
+                f"<Subject {n}> appears once, as one single character whose look follows "
+                f"the front full-body and close-up panels of <Picture {n}>."
+            )
+            continue
         if desc:
             defs.append(
                 f"<Subject {s['index']}> is the {s['kind']} \"{name}\" in "
@@ -1003,6 +1044,8 @@ def minimax_h3_ref_fallback(
         "natural motion; characters keep the identity of their reference images, never "
         "the reference-sheet backdrop.",
     )
+    if sheet_intros:
+        body = body.replace("[Shot 1] ", "[Shot 1] " + " ".join(sheet_intros) + " ", 1)
     if video_labels:
         body += (
             f"\nThe physical performance, camera path, and timing follow {video_labels}."

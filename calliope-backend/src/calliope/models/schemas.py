@@ -98,6 +98,10 @@ class CharacterUpdate(BaseModel):
     consistency_prompt: str | None = None
     portrait_path: str | None = None
     sheet_path: str | None = None
+    # How H3 prompts read the character's picture: one figure, or a multi-panel
+    # sheet declared as its own <Picture N>. 'auto' decides from the image shape.
+    reference_layout: Literal["auto", "single", "sheet"] | None = None
+    reference_panels: str | None = Field(default=None, max_length=500)
 
 
 class LocationCreate(BaseModel):

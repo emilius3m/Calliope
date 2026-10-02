@@ -278,7 +278,11 @@ def _register_asset_crud(registry: ToolRegistry) -> None:
             name="update_character",
             description=(
                 "Update one existing character. character_id must come from "
-                "get_story/get_workspace — never guess it. Pass only the fields to change."
+                "get_story/get_workspace — never guess it. Pass only the fields to change. "
+                "reference_layout tells H3 prompts how to read the character's picture: "
+                "'single' (one figure), 'sheet' (several panels of the same character, "
+                "declared as its own <Picture N>) or 'auto' (a wide picture is a sheet); "
+                "reference_panels describes the sheet's panels."
             ),
             parameters={
                 "type": "object",
@@ -290,6 +294,11 @@ def _register_asset_crud(registry: ToolRegistry) -> None:
                     "appearance": {"type": "string"},
                     "personality": {"type": "string"},
                     "consistency_prompt": {"type": "string"},
+                    "reference_layout": {"type": "string", "enum": ["auto", "single", "sheet"]},
+                    "reference_panels": {
+                        "type": "string",
+                        "description": "e.g. 'a front full-body view and a head close-up'",
+                    },
                 },
                 "required": ["character_id"],
             },
@@ -467,7 +476,16 @@ _ENTITY_META: dict[str, dict[str, Any]] = {
         "label": "Character",
         "table": "characters",
         "id_key": "character_id",
-        "columns": ("name", "role", "age", "appearance", "personality", "consistency_prompt"),
+        "columns": (
+            "name",
+            "role",
+            "age",
+            "appearance",
+            "personality",
+            "consistency_prompt",
+            "reference_layout",
+            "reference_panels",
+        ),
         "seed": character_sheet_prompt,
     },
     "location": {

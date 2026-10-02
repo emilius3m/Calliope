@@ -50,6 +50,9 @@ export interface Character {
   portrait_path: string | null;
   sheet_path: string | null;
   consistency_prompt: string | null;
+  /** How H3 prompts read the picture: 'single' figure or multi-panel 'sheet'; null/'auto' decides by shape. */
+  reference_layout?: 'auto' | 'single' | 'sheet' | null;
+  reference_panels?: string | null;
 }
 
 export interface Location {

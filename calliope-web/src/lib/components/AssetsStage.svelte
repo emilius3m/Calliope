@@ -376,6 +376,19 @@
 		deleteOpen = true;
 	}
 
+	async function saveReferenceLayout(
+		c: Character,
+		patch: { reference_layout?: 'auto' | 'single' | 'sheet'; reference_panels?: string },
+	) {
+		try {
+			await projects.updateCharacter(projectId, c.id, patch);
+			await client.invalidateQueries({ queryKey: ['assets'] });
+			await client.invalidateQueries({ queryKey: ['story'] });
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : String(err));
+		}
+	}
+
 	async function saveCharacterPrompt(c: Character) {
 		const key = charKey(c.id);
 		const text = promptForChar(c);
@@ -906,6 +919,32 @@
 								<p class="facts" title={char.personality}>
 									<span class="k">{t('assets.personality')}</span> {char.personality}
 								</p>
+							{/if}
+							<label class="layout-row" title={t('assets.layout.hint')}>
+								<span class="k">{t('assets.layout.label')}</span>
+								<select
+									class="layout-select"
+									value={char.reference_layout || 'auto'}
+									onchange={(e) =>
+										saveReferenceLayout(char, {
+											reference_layout: e.currentTarget.value as 'auto' | 'single' | 'sheet',
+										})}
+								>
+									<option value="auto">{t('assets.layout.auto')}</option>
+									<option value="single">{t('assets.layout.single')}</option>
+									<option value="sheet">{t('assets.layout.sheet')}</option>
+								</select>
+							</label>
+							{#if char.reference_layout === 'sheet'}
+								<input
+									class="field-input layout-panels"
+									value={char.reference_panels ?? ''}
+									placeholder={t('assets.layout.panelsPlaceholder')}
+									aria-label={t('assets.layout.panels')}
+									maxlength="500"
+									onchange={(e) =>
+										saveReferenceLayout(char, { reference_panels: e.currentTarget.value.trim() })}
+								/>
 							{/if}
 							{#if jstate === 'failed' && job}
 								{#if job.error}
@@ -1655,6 +1694,26 @@
 	}
 	.prompt-fold .row {
 		padding: 0 12px 12px;
+	}
+	.layout-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin: 2px 0 0;
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
+	.layout-select {
+		font-size: 12px;
+		padding: 2px 6px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 6px);
+		background: var(--bg-surface);
+		color: var(--text-primary);
+	}
+	.layout-panels {
+		margin-top: 4px;
+		font-size: 12px;
 	}
 	.copy-only {
 		margin-top: 6px;
