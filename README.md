@@ -142,10 +142,12 @@ The backend is also an **MCP server** at `http://127.0.0.1:8247/mcp` (streamable
 claude mcp add --transport http calliope http://127.0.0.1:8247/mcp
 ```
 
-With authentication enabled, issue a dedicated API token on the server using
-`.venv\Scripts\python -m calliope.auth token`, then configure the MCP client
+With authentication enabled, issue a dedicated API token from **Account → API
+tokens (MCP)** in the browser (your password is asked again), or on the server
+with `.venv\Scripts\python -m calliope.auth token`, then configure the MCP client
 to send `Authorization: Bearer <token>` on every request. Tokens expire after
-30 days and are revoked by a password change/reset. Do not put tokens in URLs,
+30 days and are revoked by a password change/reset or by **Revoke all tokens**.
+Do not put tokens in URLs,
 commit them, or reuse browser session cookies as API credentials.
 
 Opening Claude Code in this folder also picks up the bundled `.mcp.json`. Start with `list_projects` → `select_project` (or `create_project`, which selects the new project); the selection is kept on a **Claude Code (MCP)** session. Rendering tools (`enqueue_asset_jobs`, `enqueue_video_jobs`, `run_workflow`) and deletions are flagged destructive, so Claude Code asks before running them — that prompt replaces the chat-based render approval. Build Scene, AI Canvas, `ask_user` and `run_command` stay in the app. The endpoint only answers `localhost` / `127.0.0.1` hosts.

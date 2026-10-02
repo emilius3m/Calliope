@@ -106,4 +106,12 @@ export const authentication = {
     });
     await refreshAuth();
   },
+  async issueToken(
+    currentPassword: string,
+  ): Promise<{ token: string; expires_at: number }> {
+    return authRequest("token", { current_password: currentPassword });
+  },
+  async revokeTokens(currentPassword: string): Promise<{ revoked: number }> {
+    return authRequest("tokens/revoke", { current_password: currentPassword });
+  },
 };

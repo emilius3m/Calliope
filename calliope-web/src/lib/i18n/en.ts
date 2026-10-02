@@ -26,6 +26,17 @@ export const authEnglish = {
   "auth.savePassword": "Save password",
   "auth.passwordSaved": "Password updated. Your current session is still signed in.",
   "auth.disabled": "Authentication is disabled for this installation.",
+  "auth.tokensTitle": "API tokens (MCP)",
+  "auth.tokensLead": "Create a token for MCP clients and scripts. Tokens last 30 days and are revoked when the password changes.",
+  "auth.tokenPasswordHint": "Re-enter your password to create or revoke tokens.",
+  "auth.issueToken": "Create token",
+  "auth.revokeTokens": "Revoke all tokens",
+  "auth.tokenOnce": "Copy it now: it will not be shown again. Do not put it in URLs or commit it.",
+  "auth.tokenExpires": "Expires on {date}",
+  "auth.tokenCommand": "Claude Code command",
+  "auth.copy": "Copy",
+  "auth.copied": "Copied",
+  "auth.tokensRevoked": "{count} tokens revoked.",
 };
 
 export const en = {

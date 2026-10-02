@@ -369,6 +369,44 @@ def change_password(payload: PasswordChange, request: Request, response: Respons
     return {"ok": True}
 
 
+class TokenRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=512)
+
+
+def _require_browser_admin(request: Request, action: str) -> None:
+    """API tokens are managed only from a signed-in browser after re-entering the password."""
+    if not settings.auth_enabled or not getattr(request.state, "auth_user", None):
+        raise HTTPException(401, "Authentication required")
+    if request.headers.get("authorization", "").startswith("Bearer "):
+        raise HTTPException(403, "API tokens cannot manage API tokens")
+    _check_attempt(request, action)
+
+
+@router.post("/token")
+def issue_token(payload: TokenRequest, request: Request, response: Response) -> dict:
+    _require_browser_admin(request, "token")
+    with _db() as conn:
+        account = conn.execute("SELECT * FROM account WHERE id = 1").fetchone()
+        if not account or not verify_password(payload.current_password, account["password_hash"]):
+            raise HTTPException(401, "Invalid current password")
+        token = _issue_session(conn, "api")
+        conn.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"token": token, "expires_at": int(time.time()) + TOKEN_SECONDS}
+
+
+@router.post("/tokens/revoke")
+def revoke_tokens(payload: TokenRequest, request: Request) -> dict:
+    _require_browser_admin(request, "token")
+    with _db() as conn:
+        account = conn.execute("SELECT * FROM account WHERE id = 1").fetchone()
+        if not account or not verify_password(payload.current_password, account["password_hash"]):
+            raise HTTPException(401, "Invalid current password")
+        revoked = conn.execute("DELETE FROM sessions WHERE kind = 'api'").rowcount
+        conn.commit()
+    return {"revoked": revoked}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage Calliope's administrator account locally")
     parser.add_argument("command", choices=["setup-code", "reset-password", "token"])

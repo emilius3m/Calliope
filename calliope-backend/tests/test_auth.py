@@ -315,6 +315,52 @@ def test_mcp_tokens_are_separate_from_browser_cookies(signed_in):
     )
 
 
+def test_browser_admin_can_issue_and_revoke_mcp_tokens(signed_in):
+    assert (
+        signed_in.post(
+            "/api/auth/token", headers=HEADERS, json={"current_password": "wrong"}
+        ).status_code
+        == 401
+    )
+    response = signed_in.post(
+        "/api/auth/token", headers=HEADERS, json={"current_password": PASSWORD}
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    token = response.json()["token"]
+    bearer = {"Authorization": f"Bearer {token}"}
+    signed_in.cookies.clear()
+    assert signed_in.get("/api/projects", headers=bearer).status_code == 200
+    # A token cannot mint or revoke tokens, even with the password.
+    assert (
+        signed_in.post(
+            "/api/auth/token", headers=bearer, json={"current_password": PASSWORD}
+        ).status_code
+        == 403
+    )
+    assert _login(signed_in).status_code == 200
+    response = signed_in.post(
+        "/api/auth/tokens/revoke", headers=HEADERS, json={"current_password": PASSWORD}
+    )
+    assert response.status_code == 200 and response.json()["revoked"] == 1
+    assert signed_in.get("/api/projects", headers=bearer).status_code == 401
+    assert signed_in.get("/api/projects").status_code == 200
+
+
+def test_token_issue_requires_login_and_browser_marker(auth_client):
+    assert _setup(auth_client).status_code == 200
+    assert (
+        auth_client.post("/api/auth/token", json={"current_password": PASSWORD}).status_code == 403
+    )
+    auth_client.cookies.clear()
+    assert (
+        auth_client.post(
+            "/api/auth/token", headers=HEADERS, json={"current_password": PASSWORD}
+        ).status_code
+        == 401
+    )
+
+
 def test_query_parameters_cannot_authenticate(signed_in):
     token = signed_in.cookies.get(COOKIE)
     signed_in.cookies.clear()
