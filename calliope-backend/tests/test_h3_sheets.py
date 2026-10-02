@@ -59,6 +59,15 @@ def test_auto_layout_reads_the_picture_shape(pictures):
     assert video_agent.character_sheet_panels({}, "missing.png") is None
 
 
+def test_a_wide_single_figure_is_not_a_sheet(pictures):
+    """A bus or a train is wide on its own: auto also needs a prompt that asked for panels."""
+    sheet, _ = pictures
+    bus = {"consistency_prompt": "CHARACTER REFERENCE — Gigio\nLayout: one single full-body view."}
+    assert video_agent.character_sheet_panels(bus, sheet) is None
+    default = {"consistency_prompt": "CHARACTER SHEET — Sofia\nLayout: multiple panels — front."}
+    assert video_agent.character_sheet_panels(default, sheet) == video_agent.DEFAULT_SHEET_PANELS
+
+
 def test_user_choice_wins_over_the_shape(pictures):
     sheet, single = pictures
     assert video_agent.character_sheet_panels({"reference_layout": "single"}, sheet) is None

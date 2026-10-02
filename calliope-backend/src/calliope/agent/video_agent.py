@@ -85,8 +85,9 @@ def character_sheet_panels(character: dict[str, Any], image_path: str | None) ->
     """Panel description when the character's picture is a multi-panel sheet, else None.
 
     H3 must read a sheet as one character seen from several sides; described as
-    a plain picture it puts every panel on screen. The user's choice wins; 'auto'
-    treats a wide character picture as a sheet (single figures are tall).
+    a plain picture it puts every panel on screen. The user's choice wins. 'auto'
+    needs a wide picture AND an image prompt that asked for a sheet or panels (the
+    default template does): a train or a bus is wide on its own.
     """
     layout = (character.get("reference_layout") or "auto").strip().lower()
     if layout == "single" or not image_path:
@@ -94,6 +95,9 @@ def character_sheet_panels(character: dict[str, Any], image_path: str | None) ->
     panels = (character.get("reference_panels") or "").strip() or DEFAULT_SHEET_PANELS
     if layout == "sheet":
         return panels
+    asked = (character.get("consistency_prompt") or "").lower()
+    if asked.strip() and "sheet" not in asked and "panel" not in asked:
+        return None
     return panels if _image_is_landscape(image_path) else None
 
 
