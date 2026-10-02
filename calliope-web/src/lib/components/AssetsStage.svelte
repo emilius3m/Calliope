@@ -308,6 +308,36 @@
 		return loc.consistency_prompt?.trim() || locationReferenceTemplate(loc);
 	}
 
+	/** Legacy copy path for browsers that deny the async clipboard (plain http, embedded views). */
+	function copyViaSelection(text: string): boolean {
+		const area = document.createElement('textarea');
+		area.value = text;
+		area.setAttribute('readonly', '');
+		area.style.position = 'fixed';
+		area.style.opacity = '0';
+		document.body.appendChild(area);
+		area.select();
+		try {
+			return document.execCommand('copy');
+		} catch {
+			return false;
+		} finally {
+			area.remove();
+		}
+	}
+
+	async function copyPrompt(text: string) {
+		let copied = false;
+		try {
+			await navigator.clipboard.writeText(text);
+			copied = true;
+		} catch {
+			copied = copyViaSelection(text);
+		}
+		if (copied) toast.success(t('assets.promptCopied'));
+		else toast.error(t('assets.copyFailed'));
+	}
+
 	function promptForItem(item: Item): string {
 		const k = itemKey(item.id);
 		if (drafts[k] !== undefined) return drafts[k];
@@ -932,6 +962,10 @@
 										></textarea>
 									</label>
 									<div class="row">
+										<Button variant="ghost" size="sm" onclick={() => copyPrompt(promptForChar(char))}>
+											<Icon name="copy" size={14} />
+											{t('assets.copyPrompt')}
+										</Button>
 										<Button
 											variant="ghost"
 											size="sm"
@@ -953,6 +987,12 @@
 								<p class="muted small prompt-note">
 		{t('assets.wf.noPromptPre')} <code>(Input:prompt)</code>{t('assets.wf.noPromptPost')}
 	</p>
+								<div class="row copy-only">
+									<Button variant="ghost" size="sm" onclick={() => copyPrompt(promptForChar(char))}>
+										<Icon name="copy" size={14} />
+										{t('assets.copyPrompt')}
+									</Button>
+								</div>
 							{/if}
 						</div>
 					</article>
@@ -1108,6 +1148,10 @@
 										></textarea>
 									</label>
 									<div class="row">
+										<Button variant="ghost" size="sm" onclick={() => copyPrompt(promptForLoc(loc))}>
+											<Icon name="copy" size={14} />
+											{t('assets.copyPrompt')}
+										</Button>
 										<Button
 											variant="ghost"
 											size="sm"
@@ -1129,6 +1173,12 @@
 								<p class="muted small prompt-note">
 		{t('assets.wf.noPromptPre')} <code>(Input:prompt)</code>{t('assets.wf.noPromptPost')}
 	</p>
+								<div class="row copy-only">
+									<Button variant="ghost" size="sm" onclick={() => copyPrompt(promptForLoc(loc))}>
+										<Icon name="copy" size={14} />
+										{t('assets.copyPrompt')}
+									</Button>
+								</div>
 							{/if}
 						</div>
 					</article>
@@ -1284,6 +1334,10 @@
 										></textarea>
 									</label>
 									<div class="row">
+										<Button variant="ghost" size="sm" onclick={() => copyPrompt(promptForItem(item))}>
+											<Icon name="copy" size={14} />
+											{t('assets.copyPrompt')}
+										</Button>
 										<Button
 											variant="ghost"
 											size="sm"
@@ -1305,6 +1359,12 @@
 								<p class="muted small prompt-note">
 		{t('assets.wf.noPromptPre')} <code>(Input:prompt)</code>{t('assets.wf.noPromptPost')}
 	</p>
+								<div class="row copy-only">
+									<Button variant="ghost" size="sm" onclick={() => copyPrompt(promptForItem(item))}>
+										<Icon name="copy" size={14} />
+										{t('assets.copyPrompt')}
+									</Button>
+								</div>
 							{/if}
 						</div>
 					</article>
@@ -1595,6 +1655,9 @@
 	}
 	.prompt-fold .row {
 		padding: 0 12px 12px;
+	}
+	.copy-only {
+		margin-top: 6px;
 	}
 	.prompt-area {
 		font-family: var(--font-mono);

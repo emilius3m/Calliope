@@ -86,6 +86,8 @@ import { t } from '$lib/i18n.svelte';
 	/** Render-history versioning: apply an older job's output to the clip. */
 	onApplyToClip?: (job: Job, path: string) => void;
 	applying?: boolean;
+	/** Opens the non-destructive trim dialog for the selected clip. */
+	onTrimClip?: () => void;
 	}
 
 	let {
@@ -125,7 +127,10 @@ import { t } from '$lib/i18n.svelte';
 		onGenerate,
 		onApplyToClip,
 		applying = false,
+		onTrimClip,
 	}: Props = $props();
+
+	const trim = $derived(selectedClip?.clip.trim ?? null);
 
 	let clipSourceOpen = $state(false);
 	let inputsOpen = $state(false);
@@ -164,6 +169,16 @@ import { t } from '$lib/i18n.svelte';
 				{errorLong}
 			/>
 		</div>
+		{#if onTrimClip && selectedClip?.clip.clip_path}
+			<div class="trim-row">
+				<button type="button" class="trim-btn" class:active={trim} onclick={onTrimClip}>
+					<Icon name="scissors" size={14} />
+					{trim
+						? t('trim.trimmed', { start: trim.start.toFixed(2), end: trim.end.toFixed(2) })
+						: t('trim.open')}
+				</button>
+			</div>
+		{/if}
 
 		<SceneFilmstrip
 			clips={filmClips}
@@ -306,6 +321,32 @@ import { t } from '$lib/i18n.svelte';
 		justify-content: stretch;
 		overflow: hidden;
 		width: 100%;
+	}
+
+	.trim-row {
+		display: flex;
+		justify-content: flex-end;
+		flex: 0 0 auto;
+	}
+	.trim-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 6px);
+		background: var(--bg-surface);
+		color: var(--text-secondary);
+		font-size: 12px;
+		cursor: pointer;
+	}
+	.trim-btn:hover {
+		color: var(--text-primary);
+		border-color: var(--accent);
+	}
+	.trim-btn.active {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
 	/* Inspector — scrolls on its own so the player keeps the height. */

@@ -123,6 +123,8 @@ export interface Clip {
   } | null;
   chain_from_prev?: number | boolean | null;
   video_settings?: SceneVideoSettings | null;
+  /** Kept range (seconds) of the current render in the film; null when untrimmed. */
+  trim?: { start: number; end: number } | null;
   /** '#3.2' — scene 3, clip 2 (display label). */
   label?: string;
 }

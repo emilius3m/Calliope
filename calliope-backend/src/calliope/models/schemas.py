@@ -174,6 +174,11 @@ class ClipCreate(BaseModel):
     video_settings: dict[str, Any] | None = None
 
 
+class ClipTrim(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+
+
 class ClipUpdate(BaseModel):
     order_index: int | None = None
     description: str | None = None
@@ -186,6 +191,8 @@ class ClipUpdate(BaseModel):
     video_settings: dict[str, Any] | None = None
     enhancement_settings: dict[str, Any] | None = None
     use_enhanced: bool | None = None
+    # Non-destructive in/out points on the current original; an explicit null clears them.
+    trim: ClipTrim | None = None
 
 
 class ClipReorder(BaseModel):

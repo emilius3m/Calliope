@@ -18,7 +18,7 @@ from typing import Any
 from calliope import config
 from calliope.comfyui.dry_run import write_placeholder_mp4
 from calliope.db import get_db, row_to_dict
-from calliope.enhancement import film_clip_path
+from calliope.enhancement import film_clip_path, trim_current
 
 logger = logging.getLogger("calliope.export")
 
@@ -106,6 +106,7 @@ def collect_clips(project_id: int) -> tuple[list[dict[str, Any]], list[dict[str,
         ).fetchall()
         clips = [dict(r) for r in rows]
         for clip in clips:
+            clip["trim"] = trim_current(clip)
             clip["clip_path"] = film_clip_path(clip)
     finally:
         conn.close()
@@ -154,6 +155,18 @@ async def probe(path: str | Path) -> dict[str, Any]:
     return {"duration": duration, "has_audio": has_audio, "fps": video_fps}
 
 
+def apply_trims(clips: list[dict[str, Any]], probes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Probes with each trimmed clip's duration replaced by the kept range."""
+    out = []
+    for clip, p in zip(clips, probes):
+        if clip.get("trim"):
+            start, end = clip["trim"]
+            full = float(p["duration"])
+            p = {**p, "duration": max(0.1, min(end, full) - start)}
+        out.append(p)
+    return out
+
+
 def build_ffmpeg_cmd(
     clips: list[dict[str, Any]],
     probes: list[dict[str, Any]],
@@ -176,7 +189,10 @@ def build_ffmpeg_cmd(
     n = len(clips)
     ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
     cmd: list[str] = [ffmpeg, "-nostdin", "-nostats", "-progress", "pipe:1", "-y"]
-    for clip in clips:
+    for clip, p in zip(clips, probes):
+        if clip.get("trim"):
+            # Input-side seek; probes already carry the trimmed duration.
+            cmd += ["-ss", f"{clip['trim'][0]:.3f}", "-t", f"{float(p['duration']):.3f}"]
         cmd += ["-i", str(clip["clip_path"])]
     # Silent clips get a lavfi silence donor input, appended after the clip inputs
     # so input indices for real clips stay 0..n-1.
@@ -260,7 +276,14 @@ async def run_export(
         raise RuntimeError("No scene clips to export — generate videos first")
     # Record what actually enters ffmpeg, including version choices and order.
     # The UI can then flag a film as stale even after switching back to originals.
-    payload["clip_sources"] = [{"clip_id": c["id"], "path": c["clip_path"]} for c in clips]
+    payload["clip_sources"] = [
+        {
+            "clip_id": c["id"],
+            "path": c["clip_path"],
+            **({"trim": list(c["trim"])} if c["trim"] else {}),
+        }
+        for c in clips
+    ]
     conn = get_db(config.settings.db_path)
     try:
         conn.execute("UPDATE jobs SET payload_json = ? WHERE id = ?", (json.dumps(payload), job_id))
@@ -291,7 +314,7 @@ async def run_export(
         return [str(dest)]
 
     _require_binary("ffmpeg")
-    probes = [await probe(clip["clip_path"]) for clip in clips]
+    probes = apply_trims(clips, [await probe(clip["clip_path"]) for clip in clips])
     fps = target_fps(probes)
     durations = [float(p["duration"]) for p in probes]
     total_us = (sum(durations) - XFADE_SEC * max(0, len(clips) - 1)) * 1_000_000

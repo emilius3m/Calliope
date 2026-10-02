@@ -27,6 +27,7 @@
   import { progressFor } from "$lib/jobProgress";
   import SafeMedia from "./SafeMedia.svelte";
   import PromptPreviewModal from "./video/PromptPreviewModal.svelte";
+  import ClipTrimModal from "./video/ClipTrimModal.svelte";
   import VideoEditWorkspace from "./video/VideoEditWorkspace.svelte";
   import EnhancementWorkspace from "./video/EnhancementWorkspace.svelte";
   import Button from "./ui/Button.svelte";
@@ -468,6 +469,7 @@
 
   // --- HITL review gate (issue #27) ---
   let previewOpen = $state(false);
+  let trimOpen = $state(false);
 
   function beginGenerate() {
     if (!selClip) return;
@@ -821,6 +823,7 @@
         .map((e) => ({
           clip_id: e.clip.id,
           path: e.clip.film_path ?? e.clip.clip_path,
+          ...(e.clip.trim ? { trim: [e.clip.trim.start, e.clip.trim.end] } : {}),
         }));
       return JSON.stringify(sources) !== JSON.stringify(current);
     }
@@ -1109,6 +1112,14 @@
             $generateOne.mutate({ clipId: selClip.id, sceneId: selected.id });
         }}
         onPreviewPrompt={beginGenerate}
+        onTrimClip={() => (trimOpen = true)}
+      />
+
+      <ClipTrimModal
+        bind:open={trimOpen}
+        {projectId}
+        clip={selClip}
+        label={selectedEntry?.label}
       />
 
       <PromptPreviewModal

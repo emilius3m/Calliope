@@ -26,6 +26,39 @@ def film_clip_path(clip: dict[str, Any]) -> str | None:
     return clip.get("clip_path")
 
 
+MIN_TRIM_SEC = 0.5
+
+
+def trim_current(clip: dict[str, Any]) -> tuple[float, float] | None:
+    """(start, end) in seconds while the trim still belongs to the current original.
+
+    A re-render replaces clip_path, which retires the trim without touching it.
+    The enhanced version shares the original's timeline, so the same range applies.
+    """
+    start, end = clip.get("trim_start"), clip.get("trim_end")
+    if start is None or end is None or not clip.get("clip_path"):
+        return None
+    if clip.get("trim_source_path") != clip.get("clip_path"):
+        return None
+    return float(start), float(end)
+
+
+def trim_columns(clip: dict[str, Any], start: float | None, end: float | None) -> dict[str, Any]:
+    """Column values that store a trim of the clip's current original; both None clears it."""
+    if start is None and end is None:
+        return {"trim_start": None, "trim_end": None, "trim_source_path": None}
+    if not clip.get("clip_path"):
+        raise ValueError("Generate this clip before trimming it")
+    start = float(start or 0)
+    if end is None or start < 0 or float(end) - start < MIN_TRIM_SEC:
+        raise ValueError(f"A trim needs 0 <= start and at least {MIN_TRIM_SEC} s before its end")
+    return {
+        "trim_start": round(start, 3),
+        "trim_end": round(float(end), 3),
+        "trim_source_path": clip["clip_path"],
+    }
+
+
 def enqueue_enhancements(
     project_id: int,
     workflow_id: int,

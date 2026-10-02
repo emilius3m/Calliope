@@ -440,6 +440,8 @@ async def import_project(archive: Path) -> dict[str, Any]:
                         "enhancement_source_path": media(cl.get("enhancement_source_path")),
                         "enhancement_settings_json": settings_json(cl.get("enhancement_settings_json")),
                         "use_enhanced": int(bool(cl.get("use_enhanced") and media(cl.get("enhanced_path")))),
+                        # Same file as clip_path, so the trim survives only with its video.
+                        "trim_source_path": media(cl.get("trim_source_path")),
                         "video_settings_json": settings_json(cl.get("video_settings_json")),
                     },
                 )

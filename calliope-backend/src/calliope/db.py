@@ -115,6 +115,9 @@ CREATE TABLE IF NOT EXISTS clips (
     enhancement_source_path TEXT,
     enhancement_settings_json TEXT,
     use_enhanced INTEGER NOT NULL DEFAULT 0,
+    trim_start REAL,
+    trim_end REAL,
+    trim_source_path TEXT,
     chain_from_prev INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -348,6 +351,10 @@ async def migrate_db(db_path: Path) -> None:
             conn.execute(f"ALTER TABLE clips ADD COLUMN {column} TEXT")
     if "use_enhanced" not in clip_cols:
         conn.execute("ALTER TABLE clips ADD COLUMN use_enhanced INTEGER NOT NULL DEFAULT 0")
+    trim_cols = (("trim_start", "REAL"), ("trim_end", "REAL"), ("trim_source_path", "TEXT"))
+    for column, kind in trim_cols:
+        if column not in clip_cols:
+            conn.execute(f"ALTER TABLE clips ADD COLUMN {column} {kind}")
     # Clips layer: mirror each existing scene's production state into a
     # default clip #1 so the 1:1 legacy behavior keeps working unchanged.
     # Guarded on table emptiness — runs once, never touches clips the user
@@ -503,7 +510,7 @@ _PATH_COLUMNS = {
     "locations": ["reference_image_path"],
     "items": ["reference_image_path"],
     "scenes": ["env_image_path", "video_path"],
-    "clips": ["clip_path", "enhanced_path", "enhancement_source_path"],
+    "clips": ["clip_path", "enhanced_path", "enhancement_source_path", "trim_source_path"],
     "canvas_node": ["artifact_path"],
     "shot_capture": ["file_path"],
 }

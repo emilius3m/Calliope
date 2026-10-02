@@ -108,6 +108,9 @@ title={t('filmstrip.clipTitle', {
 				</span>
 				<span class="meta">
 					<span class="num">{entry.label}</span>
+					{#if entry.clip.trim}
+						<span class="cut" title={t('trim.badge')}><Icon name="scissors" size={10} /></span>
+					{/if}
 					<span class="sid">{formatClock(entry.clip.duration_sec || 5)}</span>
 				</span>
 			</button>
@@ -261,6 +264,13 @@ title={t('filmstrip.clipTitle', {
 		font-size: 10px;
 		font-weight: 700;
 		color: var(--accent);
+	}
+
+	.cut {
+		display: inline-flex;
+		color: var(--accent);
+		margin-left: auto;
+		margin-right: 4px;
 	}
 
 	.sid {

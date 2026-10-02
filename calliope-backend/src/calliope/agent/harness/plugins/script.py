@@ -11,6 +11,7 @@ from calliope.agent.harness.registry import (
     _db,
 )
 from calliope.db import row_to_dict, scene_items, set_scene_items, sync_clip_durations
+from calliope.enhancement import trim_columns, trim_current
 
 
 def annotate_scene_row(s: dict[str, Any]) -> dict[str, Any]:
@@ -319,8 +320,11 @@ def register(registry: ToolRegistry) -> None:
             name="update_clip",
             description=(
                 "Edit one clip (description / shot_size / dialog_lines_covered / "
-                "duration_sec / workflow_id / chain_from_prev). Address it by "
-                "clip_id (from list_clips) or ref '#3.2'."
+                "duration_sec / workflow_id / chain_from_prev), or trim its rendered "
+                "video. Address it by clip_id (from list_clips) or ref '#3.2'. "
+                "trim_start/trim_end (seconds) keep only that range of the current "
+                "video in the film export; the file itself is untouched and a "
+                "re-render retires the trim. clear_trim=true removes it."
             ),
             parameters={
                 "type": "object",
@@ -339,6 +343,15 @@ def register(registry: ToolRegistry) -> None:
                     "duration_sec": {"type": "number"},
                     "workflow_id": {"type": "integer"},
                     "chain_from_prev": {"type": "boolean"},
+                    "trim_start": {
+                        "type": "number",
+                        "description": "Seconds skipped at the video's start (default 0)",
+                    },
+                    "trim_end": {
+                        "type": "number",
+                        "description": "Second where the kept range ends (required for a new trim)",
+                    },
+                    "clear_trim": {"type": "boolean"},
                 },
             },
             executor=t_update_clip,
@@ -770,6 +783,11 @@ def _annotate_clip(c: dict[str, Any], scene_order: int) -> dict[str, Any]:
     """User-facing labels: clip_id (db id) + label '#<scene>.<clip>'."""
     c["clip_id"] = int(c["id"])
     c["label"] = f"#{scene_order}.{c['order_index']}"
+    if "trim_start" in c:
+        trim = trim_current(c)
+        c["trim"] = {"start": trim[0], "end": trim[1]} if trim else None
+        for key in ("trim_start", "trim_end", "trim_source_path"):
+            c.pop(key, None)
     return c
 
 
@@ -1067,6 +1085,25 @@ async def t_update_clip(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any
             data["dialog_lines_covered"] = json.dumps(
                 [int(i) for i in args["dialog_lines_covered"]]
             )
+        trimming = args.get("trim_start") is not None or args.get("trim_end") is not None
+        if args.get("clear_trim") or trimming:
+            clip = row_to_dict(
+                conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+            )
+            kept = trim_current(clip)
+            try:
+                if args.get("clear_trim"):
+                    data.update(trim_columns(clip, None, None))
+                else:
+                    start = args.get("trim_start")
+                    end = args.get("trim_end")
+                    data.update(trim_columns(
+                        clip,
+                        start if start is not None else (kept[0] if kept else 0),
+                        end if end is not None else (kept[1] if kept else None),
+                    ))
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
         if not data:
             return {"ok": False, "error": "Nothing to update"}
         fields = ", ".join(f"{k} = :{k}" for k in data)

@@ -16,7 +16,7 @@ from calliope.db import (
     set_scene_items,
     sync_clip_durations,
 )
-from calliope.enhancement import enhancement_current, film_clip_path
+from calliope.enhancement import enhancement_current, film_clip_path, trim_columns, trim_current
 from calliope.models.schemas import (
     ClipCreate,
     ClipReorder,
@@ -41,6 +41,8 @@ def _clip_public(clip_row) -> dict[str, Any]:
         clip["enhancement_settings"] = {}
     clip["enhancement_current"] = enhancement_current(clip)
     clip["film_path"] = film_clip_path(clip)
+    trim = trim_current(clip)
+    clip["trim"] = {"start": trim[0], "end": trim[1]} if trim else None
     raw_settings = clip.pop("video_settings_json", None)
     if raw_settings:
         try:
@@ -382,7 +384,18 @@ async def update_clip(project_id: int, clip_id: int, payload: ClipUpdate) -> dic
         video_settings = data.pop("video_settings", None)
         enhancement_settings = data.pop("enhancement_settings", None)
         covered = data.pop("dialog_lines_covered", None)
+        trim_set = "trim" in data
+        trim = data.pop("trim", None)
         data = {k: v for k, v in data.items() if v is not None}
+        if trim_set:
+            # A trim always belongs to the original the clip holds after this update.
+            target = {**dict(existing), **{k: v for k, v in data.items() if k == "clip_path"}}
+            try:
+                data.update(
+                    trim_columns(target, trim and trim["start"], trim and trim["end"])
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         if covered is not None:
             data["dialog_lines_covered"] = json.dumps(covered) if covered else None
         if video_settings is not None:
